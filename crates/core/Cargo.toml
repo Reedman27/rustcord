@@ -1,0 +1,11 @@
+[package]
+name = "rustcord-core"
+description = "Rustcord logic that does not depend on CEF: URL policy, settings, paths, single instance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"

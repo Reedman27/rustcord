@@ -1,0 +1,18 @@
+[package]
+name = "rustcord"
+description = "Rustcord: Rust desktop client hosting the official Discord web app in CEF (no Electron)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rustcord"
+path = "src/main.rs"
+
+[features]
+# Type-check against the CEF bindings without CEF binaries installed (no linking).
+dox = ["cef/dox"]
+
+[dependencies]
+cef = "=156.6.0"
+rustcord-core = { path = "../core" }
