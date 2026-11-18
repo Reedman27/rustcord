@@ -1,11 +1,12 @@
 //! Window and view delegates (CEF Views framework).
 
 use std::cell::RefCell;
+use std::sync::atomic::Ordering;
 
 use cef::*;
 use rustcord_core::settings::{MIN_HEIGHT, MIN_WIDTH};
 
-use crate::config;
+use crate::{config, tray};
 
 wrap_window_delegate! {
     pub struct RustcordWindowDelegate {
@@ -87,7 +88,19 @@ wrap_window_delegate! {
             *self.browser_view.borrow_mut() = None;
         }
 
-        fn can_close(&self, _window: Option<&mut Window>) -> i32 {
+        fn can_close(&self, window: Option<&mut Window>) -> i32 {
+            // Close-to-tray: hide instead of closing, but only while the tray is really
+            // registered and the user did not ask to quit.
+            if self.is_main
+                && config::get().settings.close_to_tray
+                && tray::ACTIVE.load(Ordering::SeqCst)
+                && !tray::QUITTING.load(Ordering::SeqCst)
+            {
+                if let Some(window) = window {
+                    window.hide();
+                    return 0;
+                }
+            }
             let browser_view = self.browser_view.borrow();
             let Some(browser_view) = browser_view.as_ref() else {
                 return 1;

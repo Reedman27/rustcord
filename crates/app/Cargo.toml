@@ -16,3 +16,4 @@ dox = ["cef/dox"]
 [dependencies]
 cef = "=156.6.0"
 rustcord-core = { path = "../core" }
+ksni = { version = "=0.3.7", default-features = false, features = ["blocking", "async-io"] }

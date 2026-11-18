@@ -77,6 +77,16 @@ impl Handler {
         }
     }
 
+    /// UI thread only. Close every browser; the last `on_before_close` ends the message loop.
+    fn quit_all(&mut self) {
+        debug_assert_ne!(currently_on(ThreadId::UI), 0);
+        for browser in &self.browser_list {
+            if let Some(host) = browser.host() {
+                host.close_browser(1);
+            }
+        }
+    }
+
     /// UI thread only. Loads `url` (always a Discord URL built by `nav`) and shows the window.
     fn open_url(&mut self, url: &str) {
         debug_assert_ne!(currently_on(ThreadId::UI), 0);
@@ -84,6 +94,20 @@ impl Handler {
             frame.load_url(Some(&CefString::from(url)));
         }
         self.show_main_window();
+    }
+}
+
+/// Ask the UI thread to show the main window. Safe to call from any thread.
+pub fn request_show() {
+    if let Some(inner) = Handler::instance() {
+        post_task(ThreadId::UI, Some(&mut ShowMainWindow::new(inner)));
+    }
+}
+
+/// Ask the UI thread to close everything and exit. Safe to call from any thread.
+pub fn request_quit() {
+    if let Some(inner) = Handler::instance() {
+        post_task(ThreadId::UI, Some(&mut QuitApp::new(inner)));
     }
 }
 
@@ -110,6 +134,18 @@ wrap_task! {
     impl Task {
         fn execute(&self) {
             self.inner.lock().unwrap_or_else(|e| e.into_inner()).show_main_window();
+        }
+    }
+}
+
+wrap_task! {
+    struct QuitApp {
+        inner: Arc<Mutex<Handler>>,
+    }
+
+    impl Task {
+        fn execute(&self) {
+            self.inner.lock().unwrap_or_else(|e| e.into_inner()).quit_all();
         }
     }
 }

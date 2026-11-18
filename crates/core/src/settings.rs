@@ -27,6 +27,11 @@ pub struct Settings {
     pub sandbox: bool,
     /// Extra Chromium switches, `name` or `name=value`, without leading dashes.
     pub extra_switches: Vec<String>,
+    /// Show a system tray icon (StatusNotifierItem) when a tray host is available.
+    pub tray: bool,
+    /// Closing the window hides it to the tray instead of quitting. Only takes effect
+    /// while the tray is actually registered, so the app can never become unreachable.
+    pub close_to_tray: bool,
     /// Enabled theme names (files in `<config>/themes/<name>.css`), applied in order.
     pub themes: Vec<String>,
     /// Accent colour as `#rgb`, `#rrggbb` or `#rrggbbaa`, exposed as `--rustcord-accent`.
@@ -43,6 +48,8 @@ impl Default for Settings {
             disable_background_throttling: true,
             sandbox: true,
             extra_switches: Vec::new(),
+            tray: true,
+            close_to_tray: false,
             themes: Vec::new(),
             accent_color: None,
             color_scheme: None,

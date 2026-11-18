@@ -52,6 +52,9 @@ wrap_browser_process_handler! {
             let cfg = config::get();
 
             *self.client.borrow_mut() = Some(RustcordClient::new(Handler::new()));
+            if cfg.settings.tray {
+                crate::tray::start();
+            }
 
             let url = CefString::from(cfg.start_url.as_str());
             let browser_settings = BrowserSettings::default();

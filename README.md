@@ -16,7 +16,7 @@ This is an early build. Read "Not done" before relying on it.
 
 ### Verified here
 - `rustcord-core` (URL policy, settings, XDG paths, single instance, theme engine):
-  24 unit tests pass.
+  25 unit tests pass.
 - `rustcord` (the CEF application) **type-checks and passes clippy `-D warnings`** against the
   real cef-rs 156.6.0 bindings (`--features dox`).
 
@@ -40,6 +40,7 @@ This is an early build. Read "Not done" before relying on it.
 | `discord://` deep links (`rustcord discord://-/channels/...`, `.desktop` MimeType) | `core/nav.rs`, `packaging/` |
 | Settings file with Chromium switch passthrough and background-throttling off | `core/settings.rs` |
 | Theme engine: `themes/*.css`, `quick.css`, accent colour, forced dark or light, injected after page load | `core/theme.rs`, `app/handler.rs` |
+| System tray (StatusNotifierItem via `ksni`): retries up to 30 s for a tray host, Show and Quit menu, left click shows the window, optional close-to-tray that only applies while the tray is registered | `app/tray.rs`, `core/tray_icon.rs` |
 | XDG config and data directories, no hard-coded paths, no systemd | `core/paths.rs` |
 
 ## Build
@@ -67,6 +68,8 @@ or set `"sandbox": false` in `~/.config/rustcord/settings.json`.
   "start_minimized": false,
   "disable_background_throttling": true,
   "sandbox": true,
+  "tray": true,
+  "close_to_tray": false,
   "extra_switches": ["ozone-platform=x11"],
   "themes": ["midnight"],
   "accent_color": "#5865f2",
@@ -82,11 +85,17 @@ file is kept as `settings.json.bad` and defaults are used.
 ## Not done (honest list)
 
 - **Never run**, see above.
-- **System tray**: not implemented. Needs a StatusNotifierItem crate (`ksni`) plus Vesktop's
-  wait-for-StatusNotifierHost logic.
+- **Tray on Window Maker**: Window Maker has no StatusNotifier host. Run one (for example
+  `snixembed` with a system tray dockapp) or the tray quietly stays off after 30 s.
 - **Desktop notifications**: only whatever Chromium does by default; no custom handling.
-- **Screenshare**: no picker and no PipeWire audio routing. CEF has no `desktopCapturer`
-  equivalent, so this needs its own design.
+- **Screenshare**: no code of mine. Discord origins are allowed to request screen capture
+  (the media permission handler passes through the requested types), but what the user sees
+  (Chromium's own picker or nothing) is untested. There is no per-app audio routing; CEF has
+  no `desktopCapturer` equivalent, so that needs PipeWire work.
+- **Vencord/Equicord loading**: not started. Their bundles call a `VencordNative` object that
+  Vesktop's Electron preload provides. Rustcord would need a CEF render-process handler plus
+  a message bridge to Rust (settings storage, file access, notifications). Building that
+  without a running base to test against would be guesswork, so it waits for a first run.
 - **Global shortcuts, autostart (background portal), badge count**: not implemented.
 - **Frameless window mode**, multiple main windows: not implemented.
 - **Settings UI**: there is none. Settings are edited as JSON.
