@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use ksni::blocking::TrayMethods;
 use ksni::menu::StandardItem;
 use ksni::{Icon, MenuItem};
-use rustcord_core::tray_icon;
+use rustcord_core::icon;
 
 use crate::handler;
 
@@ -39,7 +39,7 @@ impl ksni::Tray for RustcordTray {
         vec![Icon {
             width: ICON_SIZE,
             height: ICON_SIZE,
-            data: tray_icon::circle_argb(ICON_SIZE as u32, ACCENT),
+            data: icon::circle_argb(ICON_SIZE as u32, ACCENT),
         }]
     }
 

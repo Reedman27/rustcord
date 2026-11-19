@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use cef::*;
 use rustcord_core::settings::{MIN_HEIGHT, MIN_WIDTH};
 
-use crate::{config, tray};
+use crate::{config, icon, tray};
 
 wrap_window_delegate! {
     pub struct RustcordWindowDelegate {
@@ -45,11 +45,22 @@ wrap_window_delegate! {
             let mut view = View::from(browser_view);
             window.add_child_view(Some(&mut view));
             window.set_title(Some(&CefString::from("Rustcord")));
+            if let Some(mut app_icon) = icon::window_icon() {
+                window.set_window_icon(Some(&mut app_icon));
+                window.set_window_app_icon(Some(&mut app_icon));
+            }
 
             if self.is_main {
                 let s = config::window_state();
                 if let (Some(x), Some(y)) = (s.x, s.y) {
-                    window.set_bounds(Some(&Rect { x, y, width: s.width, height: s.height }));
+                    let rect = Rect { x, y, width: s.width, height: s.height };
+                    // Only restore the position if it is still on a connected screen.
+                    let on_screen = display_get_matching_bounds(Some(&rect), 0)
+                        .map(|d| d.bounds())
+                        .is_none_or(|b| s.overlaps_screen(b.x, b.y, b.width, b.height));
+                    if on_screen {
+                        window.set_bounds(Some(&rect));
+                    }
                 }
                 if s.maximized {
                     window.maximize();
@@ -109,6 +120,22 @@ wrap_window_delegate! {
                 Some(host) => host.try_close_browser(),
                 None => 1,
             }
+        }
+
+        // X11: WM_CLASS and WM_WINDOW_ROLE, so window managers can match the window
+        // (Window Maker's per-app attributes, icon lookup, `StartupWMClass=rustcord`).
+        // Wayland: the app id, which should match the .desktop file name.
+        fn linux_window_properties(
+            &self,
+            _window: Option<&mut Window>,
+            properties: Option<&mut LinuxWindowProperties>,
+        ) -> i32 {
+            let Some(p) = properties else { return 0 };
+            p.wayland_app_id = CefString::from("rustcord");
+            p.wm_class_name = CefString::from("rustcord");
+            p.wm_class_class = CefString::from("Rustcord");
+            p.wm_role_name = CefString::from(if self.is_main { "main" } else { "popup" });
+            1
         }
 
         fn initial_show_state(&self, _window: Option<&mut Window>) -> ShowState {

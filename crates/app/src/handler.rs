@@ -227,7 +227,7 @@ wrap_life_span_handler! {
         ) -> i32 {
             let url = target_url.map(|u| u.to_string()).unwrap_or_default();
             // Discord pop-outs open about:blank or a Discord URL and stay in the app.
-            if url.is_empty() || url == "about:blank" || nav::is_discord_url(&url) {
+            if url.is_empty() || nav::in_app_navigation_allowed(&url) {
                 return 0;
             }
             // Everything else goes to the system browser and the popup is cancelled.
@@ -268,7 +268,7 @@ wrap_request_handler! {
                 return 0;
             }
             let url = CefString::from(&request.url()).to_string();
-            if nav::is_discord_url(&url) {
+            if nav::in_app_navigation_allowed(&url) {
                 return 0;
             }
             external::open(&url);

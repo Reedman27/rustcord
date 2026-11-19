@@ -7,16 +7,19 @@ Rust owns the process, windows, settings, themes and desktop integration.
 It does not touch user tokens, automate accounts or call private endpoints. You sign in to
 discord.com in the embedded browser like in any browser.
 
-License: GPL-3.0-or-later (Vesktop, which this was modelled on, is GPL-3.0-or-later).
-No code was copied from the reference projects; behaviour was reimplemented in Rust.
+License: LGPL-3.0-or-later (see `COPYING.LESSER` and `COPYING`). No code was copied from
+the reference projects (Vesktop, Vencord and others); behaviour was reimplemented in Rust.
 
 ## Status
 
 This is an early build. Read "Not done" before relying on it.
 
 ### Verified here
-- `rustcord-core` (URL policy, settings, XDG paths, single instance, theme engine):
-  25 unit tests pass.
+- `rustcord-core` (URL policy, settings, XDG paths, single instance, theme engine, icon
+  generation): 27 unit tests pass.
+- The generated window icon PNG decodes correctly in Pillow, and the theme injection script
+  applies, is idempotent and cannot inject markup in a real Chromium page
+  (`python3 scripts/verify_assets.py`).
 - `rustcord` (the CEF application) **type-checks and passes clippy `-D warnings`** against the
   real cef-rs 156.6.0 bindings (`--features dox`).
 
@@ -41,6 +44,7 @@ This is an early build. Read "Not done" before relying on it.
 | Settings file with Chromium switch passthrough and background-throttling off | `core/settings.rs` |
 | Theme engine: `themes/*.css`, `quick.css`, accent colour, forced dark or light, injected after page load | `core/theme.rs`, `app/handler.rs` |
 | System tray (StatusNotifierItem via `ksni`): retries up to 30 s for a tray host, Show and Quit menu, left click shows the window, optional close-to-tray that only applies while the tray is registered | `app/tray.rs`, `core/tray_icon.rs` |
+| Window class (`WM_CLASS` rustcord/Rustcord, role main/popup), window and app icon, minimum size | `app/window.rs`, `app/icon.rs` |
 | XDG config and data directories, no hard-coded paths, no systemd | `core/paths.rs` |
 
 ## Build
@@ -51,9 +55,13 @@ Needs Rust (stable), a C++ toolchain, CMake, Ninja, and the usual Chromium runti
 ```sh
 cargo test -p rustcord-core          # no CEF needed
 cargo clippy --workspace --features rustcord/dox -- -D warnings   # type-check without CEF
-./scripts/build.sh                   # full build into dist/rustcord
+./scripts/build.sh                   # full build into dist/rustcord (downloads CEF once)
 dist/rustcord/rustcord
 ```
+
+`build.sh` keeps the CEF download in `~/.cache/rustcord/cef` (override with `CEF_PATH`) and
+copies the runtime next to the executable. The binary looks for `libcef.so` in its own
+directory, so run it from `dist/rustcord`, not from `target/`.
 
 If Chromium's sandbox cannot start (no setuid `chrome-sandbox`), either install it setuid root
 or set `"sandbox": false` in `~/.config/rustcord/settings.json`.
@@ -70,7 +78,7 @@ or set `"sandbox": false` in `~/.config/rustcord/settings.json`.
   "sandbox": true,
   "tray": true,
   "close_to_tray": false,
-  "extra_switches": ["ozone-platform=x11"],
+  "extra_switches": ["force-device-scale-factor=1.25"],
   "themes": ["midnight"],
   "accent_color": "#5865f2",
   "color_scheme": "dark"
@@ -105,7 +113,8 @@ file is kept as `settings.json.bad` and defaults are used.
 - **Audio device enumeration**, **mod loader (Vencord/Equicord)**, **Equicloud sync**,
   **RPC/presence**, **overlay**: not started.
 - **Packaging**: a `.desktop` file and a build script only. No ebuild, Flatpak or AppImage yet.
-- **Wayland**: untested. Chromium picks the platform; use `extra_switches` to force one.
+- **Proprietary codecs**: CEF's official builds ship without H.264/AAC (and Widevine), so
+  inline MP4 previews that use them may not play. Calls use VP8/VP9/Opus and are unaffected.
 
 ## Layout
 

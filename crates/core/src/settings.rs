@@ -117,6 +117,17 @@ impl Default for WindowState {
 }
 
 impl WindowState {
+    /// True if enough of this window (at least 100x50 px) overlaps the screen rectangle, so a
+    /// position saved on a monitor that is gone is not restored off-screen.
+    pub fn overlaps_screen(&self, sx: i32, sy: i32, sw: i32, sh: i32) -> bool {
+        let (Some(x), Some(y)) = (self.x, self.y) else {
+            return false;
+        };
+        let w = (x.saturating_add(self.width)).min(sx.saturating_add(sw)) - x.max(sx);
+        let h = (y.saturating_add(self.height)).min(sy.saturating_add(sh)) - y.max(sy);
+        w >= 100 && h >= 50
+    }
+
     /// Clamp sizes to sane values so a corrupt state file cannot create a 1x1 window.
     pub fn sanitized(mut self) -> Self {
         self.width = self.width.clamp(MIN_WIDTH, 16384);
@@ -210,6 +221,28 @@ mod tests {
         fs::write(&p, b"{ not json").unwrap();
         assert_eq!(load_or_default::<Settings>(&p), Settings::default());
         assert!(d.join("settings.json.bad").exists());
+    }
+
+    #[test]
+    fn saved_position_must_be_on_a_screen() {
+        let at = |x, y| WindowState {
+            x: Some(x),
+            y: Some(y),
+            width: 1280,
+            height: 720,
+            maximized: false,
+        };
+        // 1920x1080 screen at the origin
+        assert!(at(0, 0).overlaps_screen(0, 0, 1920, 1080));
+        assert!(at(600, 300).overlaps_screen(0, 0, 1920, 1080));
+        // 120x80 px still on screen: enough to grab and drag
+        assert!(at(1800, 1000).overlaps_screen(0, 0, 1920, 1080));
+        // only 80 px wide on screen: too little
+        assert!(!at(-1200, 10).overlaps_screen(0, 0, 1920, 1080));
+        // fully on another monitor that is no longer connected
+        assert!(!at(3000, 0).overlaps_screen(0, 0, 1920, 1080));
+        // no saved position: nothing to restore
+        assert!(!WindowState::default().overlaps_screen(0, 0, 1920, 1080));
     }
 
     #[test]

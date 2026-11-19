@@ -7,6 +7,7 @@ mod browser_process;
 mod config;
 mod external;
 mod handler;
+mod icon;
 mod tray;
 mod window;
 

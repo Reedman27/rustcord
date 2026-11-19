@@ -43,6 +43,13 @@ pub fn is_discord_url(url: &str) -> bool {
     }
 }
 
+/// Whether the main frame may navigate to `url` inside the app window. Discord's own hosts,
+/// plus the two internal pages Chromium and Discord use themselves: `about:blank` (the
+/// initial document of pop-out windows) and Chromium's offline error page.
+pub fn in_app_navigation_allowed(url: &str) -> bool {
+    is_discord_url(url) || url == "about:blank" || url.starts_with("chrome-error://chromewebdata/")
+}
+
 /// Schemes we are willing to pass to `xdg-open`. Anything else (file:, javascript:,
 /// custom app schemes) is dropped.
 pub fn external_open_allowed(url: &str) -> bool {
@@ -122,6 +129,26 @@ mod tests {
         }
         // WHATWG treats backslash as a path separator for https, so this host is evil.com.
         assert!(!is_discord_url("https://evil.com\\@discord.com/"));
+    }
+
+    #[test]
+    fn in_app_navigation_policy() {
+        assert!(in_app_navigation_allowed("https://discord.com/app"));
+        assert!(in_app_navigation_allowed("about:blank"));
+        assert!(in_app_navigation_allowed("chrome-error://chromewebdata/"));
+        for bad in [
+            "https://example.org/",
+            "about:srcdoc",
+            "about:blank#x\nhttps://evil",
+            "data:text/html,<script>1</script>",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "chrome://settings",
+            "chrome-error://other/",
+            "",
+        ] {
+            assert!(!in_app_navigation_allowed(bad), "must reject {bad:?}");
+        }
     }
 
     #[test]
