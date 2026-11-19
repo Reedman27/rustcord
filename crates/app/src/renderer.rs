@@ -60,9 +60,9 @@ wrap_render_process_handler! {
             &self,
             browser: Option<&mut Browser>,
             frame: Option<&mut Frame>,
-            _context: Option<&mut V8Context>,
+            context: Option<&mut V8Context>,
         ) {
-            let (Some(browser), Some(frame)) = (browser, frame) else { return };
+            let (Some(browser), Some(frame), Some(context)) = (browser, frame, context) else { return };
             if frame.is_main() != 1 {
                 return;
             }
@@ -73,11 +73,22 @@ wrap_render_process_handler! {
             let Some(script) = with_scripts(|m| m.get(&browser.identifier()).cloned()) else {
                 return;
             };
-            frame.execute_java_script(
+            // Synchronous eval inside the new context, so it is guaranteed to run before
+            // any page script (execute_java_script gives no such ordering promise).
+            let mut exception = None;
+            let ok = context.eval(
                 Some(&CefString::from(script.as_str())),
                 Some(&CefString::from("rustcord://mod")),
-                0,
+                1,
+                None,
+                Some(&mut exception),
             );
+            if ok != 1 {
+                let msg = exception
+                    .map(|e| CefString::from(&e.message()).to_string())
+                    .unwrap_or_default();
+                eprintln!("rustcord: mod bundle failed to run: {msg}");
+            }
         }
     }
 }
