@@ -1,6 +1,7 @@
 //! Dev helper for the verification scripts in `scripts/`.
 //!   cargo run -q -p rustcord-core --example dump -- png <size>     > icon.png
 //!   cargo run -q -p rustcord-core --example dump -- theme-script   < theme.css   > script.js
+//!   cargo run -q -p rustcord-core --example dump -- mod-script     < Vencord.user.js > wrapped.js
 use std::io::{Read, Write};
 
 fn main() {
@@ -18,8 +19,16 @@ fn main() {
             out.write_all(rustcord_core::theme::injection_script(&css).as_bytes())
                 .unwrap();
         }
+        Some("mod-script") => {
+            let mut src = String::new();
+            std::io::stdin().read_to_string(&mut src).unwrap();
+            out.write_all(rustcord_core::mods::wrap_script(&src).as_bytes())
+                .unwrap();
+        }
         _ => {
-            eprintln!("usage: dump png <size> | dump theme-script < css");
+            eprintln!(
+                "usage: dump png <size> | dump theme-script < css | dump mod-script < bundle"
+            );
             std::process::exit(2);
         }
     }

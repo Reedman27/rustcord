@@ -16,10 +16,14 @@ This is an early build. Read "Not done" before relying on it.
 
 ### Verified here
 - `rustcord-core` (URL policy, settings, XDG paths, single instance, theme engine, icon
-  generation): 27 unit tests pass.
+  generation): 35 unit tests pass.
 - The generated window icon PNG decodes correctly in Pillow, and the theme injection script
   applies, is idempotent and cannot inject markup in a real Chromium page
   (`python3 scripts/verify_assets.py`).
+- The real Vencord and Equicord userscript builds, wrapped by the same Rust function the app
+  uses, start in headless Chromium against a stub discord.com page: 179 / 373 plugins
+  register and settings persist (`python3 scripts/verify_mods.py <bundle.user.js>...`).
+  That is the page-side half only; the CEF injection path itself has never run.
 - `rustcord` (the CEF application) **type-checks and passes clippy `-D warnings`** against the
   real cef-rs 156.6.0 bindings (`--features dox`).
 
@@ -90,6 +94,24 @@ Put theme CSS in `~/.config/rustcord/themes/<name>.css` and list the name in `th
 `var(--rustcord-accent)`. Changes apply on the next page load or restart. A malformed settings
 file is kept as `settings.json.bad` and defaults are used.
 
+## Vencord / Equicord (opt-in, off by default)
+
+Rustcord runs the projects' own standalone `*.user.js` builds unmodified at document start,
+so your plugins and themes work as they do in the browser extension (settings and themes are
+stored in the profile). Discord's terms forbid client modifications; this is your choice and
+your risk.
+
+```
+rustcord mods install equicord     # or vencord; records the SHA-256, nothing runs on its own
+rustcord mods enable equicord
+rustcord mods status
+rustcord mods path ~/my-Equicord.user.js   # your own build (userplugins) instead
+```
+
+The bundle is verified against its recorded hash on every start. Updating is manual
+(`mods update`), because the bundle runs with full page privileges. Plain CSS themes still
+go in `~/.config/rustcord/themes/` and `quick.css`, with or without a mod client.
+
 ## Not done (honest list)
 
 - **Never run**, see above.
@@ -100,10 +122,9 @@ file is kept as `settings.json.bad` and defaults are used.
   (the media permission handler passes through the requested types), but what the user sees
   (Chromium's own picker or nothing) is untested. There is no per-app audio routing; CEF has
   no `desktopCapturer` equivalent, so that needs PipeWire work.
-- **Vencord/Equicord loading**: not started. Their bundles call a `VencordNative` object that
-  Vesktop's Electron preload provides. Rustcord would need a CEF render-process handler plus
-  a message bridge to Rust (settings storage, file access, notifications). Building that
-  without a running base to test against would be guesswork, so it waits for a first run.
+- **Vencord/Equicord**: implemented but untested in CEF, see below. Plugins that need
+  Vesktop's native layer (`VencordNative`) are unavailable; cross-origin requests from the
+  clients use a `fetch` shim, so hosts without CORS headers fail.
 - **Global shortcuts, autostart (background portal), badge count**: not implemented.
 - **Frameless window mode**, multiple main windows: not implemented.
 - **Settings UI**: there is none. Settings are edited as JSON.

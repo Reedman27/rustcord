@@ -8,6 +8,8 @@ mod config;
 mod external;
 mod handler;
 mod icon;
+mod mods_cli;
+mod renderer;
 mod tray;
 mod window;
 
@@ -21,6 +23,12 @@ use rustcord_core::{nav, paths};
 use crate::browser_process::RustcordApp;
 
 fn main() -> ExitCode {
+    // `rustcord mods ...` is a plain CLI and never starts CEF.
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.first().map(String::as_str) == Some("mods") {
+        return mods_cli::run(&argv[1..]);
+    }
+
     // Initialize the CEF API version.
     let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
 
@@ -34,9 +42,10 @@ fn main() -> ExitCode {
     let is_browser_process = cmd_line.has_switch(Some(&type_switch)) != 1;
 
     // Child processes run to completion inside execute_process.
+    let mut child_app = renderer::RustcordChildApp::new();
     let ret = execute_process(
         Some(args.as_main_args()),
-        None::<&mut App>,
+        Some(&mut child_app),
         std::ptr::null_mut(),
     );
     if !is_browser_process {

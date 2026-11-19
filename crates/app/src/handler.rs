@@ -39,6 +39,20 @@ impl Handler {
 
     fn on_after_created(&mut self, browser: Option<&mut Browser>) {
         if let Some(browser) = browser.cloned() {
+            // Mod clients load themes/plugin assets from other hosts, which Discord's CSP
+            // blocks; the extensions strip CSP headers, here the main browser bypasses CSP.
+            if self.browser_list.is_empty() && config::get().settings.mod_client.is_some() {
+                if let Some(host) = browser.host() {
+                    if let Some(mut params) = dictionary_value_create() {
+                        params.set_bool(Some(&CefString::from("enabled")), 1);
+                        host.execute_dev_tools_method(
+                            0,
+                            Some(&CefString::from("Page.setBypassCSP")),
+                            Some(&mut params),
+                        );
+                    }
+                }
+            }
             self.browser_list.push(browser);
         }
     }

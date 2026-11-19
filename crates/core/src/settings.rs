@@ -6,6 +6,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::mods::ModClient;
 use crate::nav::Branch;
 
 pub const MIN_WIDTH: i32 = 940;
@@ -38,6 +39,12 @@ pub struct Settings {
     pub accent_color: Option<String>,
     /// Force `dark` or `light` color-scheme; `None` follows Discord.
     pub color_scheme: Option<String>,
+    /// Opt-in: load Vencord or Equicord (installed with `rustcord mods install`).
+    /// Off by default; modifying the Discord client is against Discord's terms.
+    pub mod_client: Option<ModClient>,
+    /// Path to your own build of the selected client (e.g. with userplugins), used
+    /// instead of the installed bundle.
+    pub mod_script: Option<String>,
 }
 
 impl Default for Settings {
@@ -53,6 +60,8 @@ impl Default for Settings {
             themes: Vec::new(),
             accent_color: None,
             color_scheme: None,
+            mod_client: None,
+            mod_script: None,
         }
     }
 }

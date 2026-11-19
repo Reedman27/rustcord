@@ -60,11 +60,12 @@ wrap_browser_process_handler! {
             let browser_settings = BrowserSettings::default();
             let mut client = self.client.borrow().clone();
             let mut view_delegate = RustcordBrowserViewDelegate::new(true);
+            let mut extra_info = mod_extra_info(cfg);
             let browser_view = browser_view_create(
                 client.as_mut(),
                 Some(&url),
                 Some(&browser_settings),
-                None,
+                extra_info.as_mut(),
                 None,
                 Some(&mut view_delegate),
             );
@@ -77,6 +78,28 @@ wrap_browser_process_handler! {
             let mut window_delegate =
                 RustcordWindowDelegate::new(RefCell::new(browser_view), show_state, true);
             window_create_top_level(Some(&mut window_delegate));
+        }
+    }
+}
+
+/// If a mod client is enabled, read and verify its bundle and pass it to the renderer.
+fn mod_extra_info(cfg: &config::Config) -> Option<DictionaryValue> {
+    use rustcord_core::{mods, paths};
+    let client = cfg.settings.mod_client?;
+    let custom = cfg.settings.mod_script.as_deref().map(std::path::Path::new);
+    match mods::load_script(&paths::data_dir(), client, custom) {
+        Ok(src) => {
+            let dict = dictionary_value_create()?;
+            let wrapped = mods::wrap_script(&src);
+            dict.set_string(
+                Some(&CefString::from(crate::renderer::EXTRA_KEY)),
+                Some(&CefString::from(wrapped.as_str())),
+            );
+            Some(dict)
+        }
+        Err(e) => {
+            eprintln!("rustcord: {} not loaded: {e}", client.name());
+            None
         }
     }
 }
