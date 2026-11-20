@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/app"]
+members = ["crates/core", "crates/app", "crates/qt"]
+# `cargo build` builds the Qt frontend (no CEF download); build the CEF one with `-p rustcord`.
+default-members = ["crates/core", "crates/qt"]
 
 [workspace.package]
 version = "0.1.0"

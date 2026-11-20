@@ -94,23 +94,28 @@ Put theme CSS in `~/.config/rustcord/themes/<name>.css` and list the name in `th
 `var(--rustcord-accent)`. Changes apply on the next page load or restart. A malformed settings
 file is kept as `settings.json.bad` and defaults are used.
 
-## Chimera Linux and other musl systems (Flatpak)
+## Chimera Linux and other musl systems (native Qt WebEngine build)
 
-Official CEF/Chromium builds are glibc-only and cannot run on musl, and building Chromium
-for musl is not realistic. On Chimera, build the Flatpak instead, which brings its own glibc
-runtime (needs network; first build downloads the runtime, crates and CEF):
+CEF/Chromium binaries are glibc-only, so on musl Rustcord uses **Qt WebEngine** (Chromium, built
+by your distro) through the `rustcord-qt` frontend. It shares everything else with the CEF
+build: settings, themes, Vencord/Equicord, Rich Presence, single instance, deep links.
 
 ```
-apk add flatpak xdg-desktop-portal-gtk
-./scripts/flatpak.sh
-flatpak run dev.rustcord.Rustcord
-flatpak run --command=rustcord dev.rustcord.Rustcord mods install equicord
+apk add qt6-qtwebengine-devel rust cargo clang pkgconf     # package names: check `apk search`
+cargo build --release                                      # builds rustcord-qt, no CEF download
+target/release/rustcord-qt
+target/release/rustcord-qt mods install equicord && target/release/rustcord-qt mods enable equicord
 ```
 
-Inside Flatpak, Chromium's own sandbox is replaced by Flatpak's. Settings live in
-`~/.var/app/dev.rustcord.Rustcord/config/rustcord/`. **Untested**: I could not run
-flatpak-builder here. If it reports a missing runtime branch, bump `49` / `25.08` in
-`packaging/flatpak/dev.rustcord.Rustcord.yml` and `scripts/flatpak.sh` together.
+Verified in a virtual display (Qt 6.4, Ubuntu, `scripts/qt_e2e/run.sh <Equicord.user.js>`): the real
+Equicord bundle runs at document start with 373 plugins registered, `quick.css` applies, WebRTC
+APIs exist, and a simulated game's presence reaches the page through the bridge and is cleared when
+the game exits. **Not verified:** real Discord login, voice/video/screenshare, the tray, pop-out
+windows, and your Qt version (Chimera's is newer; I used only long-stable APIs). Voice with
+Qt WebEngine depends on how your distro built it; Qt 6.7+ adds a proper screen-share picker that
+this build does not use yet. Qt's tray falls back to XEmbed, so a Window Maker dock tray works.
+
+A Flatpak recipe also exists (`scripts/flatpak.sh`, CEF inside Flatpak) as a fallback; it is untested.
 
 ## Vencord / Equicord (opt-in, off by default)
 

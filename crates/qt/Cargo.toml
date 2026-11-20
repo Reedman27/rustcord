@@ -1,0 +1,17 @@
+[package]
+name = "rustcord-qt"
+description = "Rustcord frontend on Qt WebEngine: runs on musl systems such as Chimera Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rustcord-qt"
+path = "src/main.rs"
+
+[dependencies]
+rustcord-core = { path = "../core" }
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+
+[build-dependencies]
+cc = "1"
