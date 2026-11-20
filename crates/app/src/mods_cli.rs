@@ -115,3 +115,90 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 }
+
+const CONFIG_USAGE: &str = "usage:
+  rustcord config show                 print settings.json
+  rustcord config set <key> <value>    keys: branch, start_minimized, disable_background_throttling,
+                                       sandbox, tray, close_to_tray, rpc, mod_csp_bypass,
+                                       accent_color, color_scheme
+  rustcord themes list                 themes found in <config>/themes (* = enabled)
+  rustcord themes enable|disable <name>
+  rustcord autostart enable|disable    XDG autostart entry for this executable";
+
+/// Handle the non-GUI subcommands (`mods`, `config`, `themes`, `autostart`).
+/// Returns `None` when `argv` is a normal launch.
+pub fn dispatch(argv: &[String]) -> Option<ExitCode> {
+    let rest = &argv[1.min(argv.len())..];
+    match argv.first().map(String::as_str)? {
+        "mods" => Some(run(rest)),
+        "config" | "themes" | "autostart" => {
+            let result = settings_command(argv[0].as_str(), rest);
+            Some(match result {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("{e}");
+                    ExitCode::FAILURE
+                }
+            })
+        }
+        _ => None,
+    }
+}
+
+fn settings_command(cmd: &str, args: &[String]) -> Result<(), String> {
+    use rustcord_core::edit;
+    let dir = paths::config_dir();
+    let path = dir.join("settings.json");
+    let mut s: Settings = settings::load_or_default(&path);
+    let save = |s: &Settings| {
+        settings::save_atomic(&path, s).map_err(|e| format!("cannot save settings: {e}"))
+    };
+    let a = |i: usize| args.get(i).map(String::as_str);
+    match (cmd, a(0)) {
+        ("config", Some("show")) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&s).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
+        ("config", Some("set")) => match (a(1), a(2)) {
+            (Some(k), Some(v)) => {
+                edit::set_key(&mut s, k, v)?;
+                save(&s)?;
+                println!("{k} = {v}  (restart Rustcord to apply)");
+                Ok(())
+            }
+            _ => Err(CONFIG_USAGE.into()),
+        },
+        ("themes", Some("list")) => {
+            let found = rustcord_core::theme::discover(&dir.join("themes"));
+            if found.is_empty() {
+                println!("no themes; put .css files in {}/themes", dir.display());
+            }
+            for t in found {
+                println!("{} {t}", if s.themes.contains(&t) { "*" } else { " " });
+            }
+            Ok(())
+        }
+        ("themes", Some(op @ ("enable" | "disable"))) => match a(1) {
+            Some(name) => {
+                edit::set_theme(&mut s, &dir, name, op == "enable")?;
+                save(&s)?;
+                println!("theme {name} {op}d  (restart Rustcord to apply)");
+                Ok(())
+            }
+            None => Err(CONFIG_USAGE.into()),
+        },
+        ("autostart", Some(op @ ("enable" | "disable"))) => {
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let home = paths::config_dir();
+            // config_dir is <xdg_config_home>/rustcord
+            let xdg = home.parent().ok_or("no config directory")?;
+            edit::set_autostart(xdg, &exe.to_string_lossy(), op == "enable")?;
+            println!("autostart {op}d");
+            Ok(())
+        }
+        _ => Err(CONFIG_USAGE.into()),
+    }
+}

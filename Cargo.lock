@@ -1433,6 +1433,7 @@ dependencies = [
  "cef",
  "ksni",
  "rustcord-core",
+ "serde_json",
  "ureq",
 ]
 
@@ -1453,6 +1454,8 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "rustcord-core",
+ "serde_json",
+ "tungstenite",
  "ureq",
 ]
 

@@ -16,7 +16,7 @@ This is an early build. Read "Not done" before relying on it.
 
 ### Verified here
 - `rustcord-core` (URL policy, settings, XDG paths, single instance, theme engine, icon
-  generation): 35 unit tests pass.
+  generation): 44 unit tests pass (including Rich Presence over a real socket and websocket).
 - The generated window icon PNG decodes correctly in Pillow, and the theme injection script
   applies, is idempotent and cannot inject markup in a real Chromium page
   (`python3 scripts/verify_assets.py`).
@@ -27,11 +27,20 @@ This is an early build. Read "Not done" before relying on it.
 - `rustcord` (the CEF application) **type-checks and passes clippy `-D warnings`** against the
   real cef-rs 156.6.0 bindings (`--features dox`).
 
+- `rustcord-qt` (Qt WebEngine frontend) **runs** in a virtual display against a local stand-in
+  for discord.com (`scripts/qt_e2e/run.sh <Equicord.user.js>`): real Equicord bundle with 373
+  plugins at document start, `quick.css`, a CSP-blocked external stylesheet made to load by the
+  DevTools bypass, WebRTC APIs, a desktop notification arriving on D-Bus, and a simulated game's
+  Rich Presence reaching the page and being cleared again.
+
 ### Not verified (never run)
-- The app has **not been linked or launched**. The sandbox I built it in could not run a
-  Chromium window, so nothing below has been seen working: login, text chat, voice, camera,
-  navigation guard in a live page, window-state restore, theme injection, deep links.
-  Treat the first run on your machine as the real Phase 0 test.
+- The **CEF** application (`rustcord`) has not been linked or launched; its sandbox could not run
+  Chromium. Login, text chat, voice, camera, navigation guard in a live page, window-state
+  restore, deep links: nothing seen working. The first run on your machine is the real test.
+- Neither frontend has been run against the real discord.com (no account or access here), so
+  login, voice, video and screenshare are unconfirmed on both.
+- Qt: tray, pop-out windows, the screen-share picker (compiled only on Qt 6.7+; I had 6.4) and
+  your distro's Qt build are unconfirmed.
 
 ## What is implemented
 
@@ -49,6 +58,8 @@ This is an early build. Read "Not done" before relying on it.
 | Theme engine: `themes/*.css`, `quick.css`, accent colour, forced dark or light, injected after page load | `core/theme.rs`, `app/handler.rs` |
 | System tray (StatusNotifierItem via `ksni`): retries up to 30 s for a tray host, Show and Quit menu, left click shows the window, optional close-to-tray that only applies while the tray is registered | `app/tray.rs`, `core/tray_icon.rs` |
 | Window class (`WM_CLASS` rustcord/Rustcord, role main/popup), window and app icon, minimum size | `app/window.rs`, `app/icon.rs` |
+| `rustcord config show/set`, `themes list/enable/disable`, `autostart enable/disable` (CLI, since there is no settings window) | `core/edit.rs`, `app/mods_cli.rs` |
+| Qt frontend: window, tray (SNI or XEmbed), downloads, D-Bus notifications, CSP bypass for online themes, pop-outs | `crates/qt/` |
 | XDG config and data directories, no hard-coded paths, no systemd | `core/paths.rs` |
 
 ## Build
@@ -147,34 +158,36 @@ real game. Not implemented: the browser RPC websocket (port 6463), automatic gam
 
 ## Not done (honest list)
 
-- **Never run**, see above.
-- **Tray on Window Maker**: Window Maker has no StatusNotifier host. Run one (for example
-  `snixembed` with a system tray dockapp) or the tray quietly stays off after 30 s.
-- **Desktop notifications**: only whatever Chromium does by default; no custom handling.
-- **Screenshare**: no code of mine. Discord origins are allowed to request screen capture
-  (the media permission handler passes through the requested types), but what the user sees
-  (Chromium's own picker or nothing) is untested. There is no per-app audio routing; CEF has
-  no `desktopCapturer` equivalent, so that needs PipeWire work.
-- **Vencord/Equicord**: implemented but untested in CEF, see below. Plugins that need
-  Vesktop's native layer (`VencordNative`) are unavailable; cross-origin requests from the
-  clients use a `fetch` shim, so hosts without CORS headers fail.
-- **Global shortcuts, autostart (background portal), badge count**: not implemented.
-- **Frameless window mode**, multiple main windows: not implemented.
-- **Settings UI**: there is none. Settings are edited as JSON.
-- **Slint interface**: not started. In a hybrid client the web page is the main UI, so I
-  deferred native Slint windows until there is something native to put in them.
-- **Plugin system (WASM)**: not started. No placeholder was added on purpose.
-- **Audio device enumeration**, **mod loader (Vencord/Equicord)**, **Equicloud sync**,
-  **RPC/presence**, **overlay**: not started.
-- **Packaging**: a `.desktop` file and a build script only. No ebuild, Flatpak or AppImage yet.
-- **Proprietary codecs**: CEF's official builds ship without H.264/AAC (and Widevine), so
-  inline MP4 previews that use them may not play. Calls use VP8/VP9/Opus and are unaffected.
+- **CEF build never run**, see above. The Qt build ran only against a stand-in page.
+- **Tray on Window Maker with the CEF build**: needs a StatusNotifier host (`snixembed`). The Qt
+  build falls back to XEmbed, which a dock tray provides.
+- **Notifications**: Qt build sends them over D-Bus (clicking one does not focus the window yet).
+  CEF build: whatever Chromium does by default.
+- **Screenshare**: no per-app audio routing (needs PipeWire work). CEF shows Chromium's own
+  picker or nothing; Qt 6.7+ gets a simple list dialog (uncompiled here); Qt below 6.7 cannot
+  select a source.
+- **Vencord/Equicord**: plugins that need Vesktop's native layer (`VencordNative`) are
+  unavailable; cross-origin requests use a `fetch` shim, so hosts without CORS headers fail.
+  Equicloud sync is not implemented.
+- **Rich Presence**: no automatic game detection and no browser RPC websocket (port 6463).
+- **Global shortcuts and badge count**: not implemented (no portable way on plain X11 without
+  grabbing keys; I did not want to guess).
+- **Frameless window mode**, multiple main windows, **audio device enumeration**: not implemented.
+- **Settings window and Slint interface**: none. Use the CLI or edit JSON. In a hybrid client the
+  web page is the UI; I did not add native windows with nothing to show.
+- **Plugin system (WASM)**: not started, no placeholder on purpose.
+- **Overlay**: not started.
+- **Packaging**: `.desktop` file, build scripts and an untested Flatpak recipe. No ebuild, apk
+  or AppImage.
+- **Proprietary codecs**: official CEF builds lack H.264/AAC/Widevine (calls use VP8/VP9/Opus and
+  are unaffected). Qt WebEngine depends on how your distro built it.
 
 ## Layout
 
 ```
 crates/core   pure logic, fully unit-tested, no CEF
 crates/app    the CEF application (binary: rustcord)
+crates/qt     the Qt WebEngine application (binary: rustcord-qt), C++ shim in src/shim.cpp
 packaging/    desktop entry
-scripts/      build script
+scripts/      build, Flatpak and verification scripts (qt_e2e/ = virtual-display test)
 ```

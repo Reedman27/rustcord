@@ -4,7 +4,13 @@ use std::process::Command;
 fn pkg(args: &[&str]) -> Vec<String> {
     let out = Command::new("pkg-config")
         .args(args)
-        .args(["Qt6WebEngineWidgets", "Qt6Widgets", "Qt6Gui", "Qt6Core"])
+        .args([
+            "Qt6WebEngineWidgets",
+            "Qt6DBus",
+            "Qt6Widgets",
+            "Qt6Gui",
+            "Qt6Core",
+        ])
         .output()
         .expect("pkg-config not found");
     if !out.status.success() {

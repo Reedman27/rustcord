@@ -25,8 +25,8 @@ use crate::browser_process::RustcordApp;
 fn main() -> ExitCode {
     // `rustcord mods ...` is a plain CLI and never starts CEF.
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    if argv.first().map(String::as_str) == Some("mods") {
-        return mods_cli::run(&argv[1..]);
+    if let Some(code) = mods_cli::dispatch(&argv) {
+        return code;
     }
 
     // Initialize the CEF API version.

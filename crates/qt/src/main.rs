@@ -10,6 +10,7 @@ use rustcord_core::settings::{self as rs, Settings, WindowState};
 use rustcord_core::single_instance::{self, Message, Outcome};
 use rustcord_core::{icon, mods, nav, paths, rpc, theme};
 
+mod cdp;
 #[path = "../../app/src/mods_cli.rs"]
 mod mods_cli;
 
@@ -98,8 +99,8 @@ fn on_ipc(msg: Message) {
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    if argv.first().map(String::as_str) == Some("mods") {
-        return mods_cli::run(&argv[1..]);
+    if let Some(code) = mods_cli::dispatch(&argv) {
+        return code;
     }
 
     let config_dir = paths::config_dir();
@@ -152,8 +153,17 @@ fn main() -> ExitCode {
         theme::injection_script(&css)
     };
 
-    let flags = settings
-        .chromium_switches()
+    let mut switches = settings.chromium_switches();
+    if !mod_script.is_empty() && settings.mod_csp_bypass {
+        match cdp::free_port() {
+            Some(port) => {
+                switches.push(("remote-debugging-port".into(), Some(port.to_string())));
+                cdp::spawn(port);
+            }
+            None => eprintln!("rustcord: no free port, CSP bypass unavailable"),
+        }
+    }
+    let flags = switches
         .into_iter()
         .map(|(k, v)| match v {
             // QTWEBENGINE_CHROMIUM_FLAGS is split on spaces; quote values that contain any.

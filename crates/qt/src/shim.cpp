@@ -5,6 +5,8 @@
 #include <QRegularExpression>
 #include <QFileInfo>
 #include <QCloseEvent>
+#include <QDBusConnection>
+#include <QDBusMessage>
 #include <QDesktopServices>
 #include <QDir>
 #include <QIcon>
@@ -17,12 +19,17 @@
 #include <QUrl>
 #include <QWebEngineDownloadRequest>
 #include <QWebEngineFullScreenRequest>
+#include <QWebEngineNotification>
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineScript>
 #include <QWebEngineScriptCollection>
 #include <QWebEngineSettings>
 #include <QWebEngineView>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+#include <QInputDialog>
+#include <QWebEngineDesktopMediaRequest>
+#endif
 
 extern "C" {
 struct RcConfig {
@@ -69,6 +76,34 @@ public:
     Page(QWebEngineProfile *p, QObject *parent) : QWebEnginePage(p, parent) {
         connect(this, &QWebEnginePage::featurePermissionRequested, this,
                 [this](const QUrl &origin, QWebEnginePage::Feature f) { onPermission(origin, f); });
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+        // Screen-share picker (Qt 6.7+). Not compiled or run in my test environment (Qt 6.4).
+        connect(this, &QWebEnginePage::desktopMediaRequested, this,
+                [this](const QWebEngineDesktopMediaRequest &req) {
+                    QStringList names;
+                    QList<QModelIndex> idx;
+                    QList<bool> screen;
+                    QAbstractListModel *sm = req.screensModel(), *wm = req.windowsModel();
+                    for (int i = 0; i < sm->rowCount(); ++i) {
+                        names << "Screen: " + sm->data(sm->index(i, 0)).toString();
+                        idx << sm->index(i, 0);
+                        screen << true;
+                    }
+                    for (int i = 0; i < wm->rowCount(); ++i) {
+                        names << "Window: " + wm->data(wm->index(i, 0)).toString();
+                        idx << wm->index(i, 0);
+                        screen << false;
+                    }
+                    bool ok = false;
+                    QString pick = names.isEmpty() ? QString()
+                        : QInputDialog::getItem(owner ? owner->window() : nullptr, "Share your screen",
+                                                "Choose what to share:", names, 0, false, &ok);
+                    int n = names.indexOf(pick);
+                    if (!ok || n < 0) req.cancel();
+                    else if (screen[n]) req.selectScreen(idx[n]);
+                    else req.selectWindow(idx[n]);
+                });
+#endif
         connect(this, &QWebEnginePage::fullScreenRequested, this,
                 [this](QWebEngineFullScreenRequest r) {
                     r.accept();
@@ -223,6 +258,22 @@ int rc_qt_run(int argc, char **argv, const RcConfig *c) {
         addScript("rustcord-mod", guardOpen + g_modScript + "\n}", QWebEngineScript::DocumentCreation);
     if (!g_themeScript.isEmpty())
         addScript("rustcord-theme", guardOpen + g_themeScript + "\n}", QWebEngineScript::DocumentReady);
+
+    // Desktop notifications over org.freedesktop.Notifications, with the tray balloon as a
+    // fallback when no notification service answers.
+    g_profile->setNotificationPresenter([](std::unique_ptr<QWebEngineNotification> n) {
+        QString title = n->title(), body = n->message();
+        n->show();
+        QDBusMessage m = QDBusMessage::createMethodCall(
+            "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications", "Notify");
+        body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        m << "Rustcord" << uint(0) << "rustcord" << title << body << QStringList() << QVariantMap() << int(-1);
+        bool sent = QDBusConnection::sessionBus().isConnected() &&
+                    QDBusConnection::sessionBus().call(m, QDBus::Block, 2000).type() ==
+                        QDBusMessage::ReplyMessage;
+        if (!sent && g_tray) g_tray->showMessage(title, n->message(), g_icon);
+    });
 
     // Downloads go to the user's Downloads folder without overwriting existing files.
     QObject::connect(g_profile, &QWebEngineProfile::downloadRequested, [](QWebEngineDownloadRequest *d) {

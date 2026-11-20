@@ -48,6 +48,9 @@ pub struct Settings {
     /// Rich Presence: accept games on `$XDG_RUNTIME_DIR/discord-ipc-N` and feed the
     /// Vencord/Equicord "WebRichPresence (arRPC)" plugin on 127.0.0.1:1337.
     pub rpc: bool,
+    /// Qt frontend only: while a mod client is enabled, bypass Discord's CSP through a
+    /// loopback DevTools port so online themes load. Turn off to avoid opening that port.
+    pub mod_csp_bypass: bool,
 }
 
 impl Default for Settings {
@@ -66,6 +69,7 @@ impl Default for Settings {
             mod_client: None,
             mod_script: None,
             rpc: true,
+            mod_csp_bypass: true,
         }
     }
 }
