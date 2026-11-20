@@ -105,7 +105,8 @@ fn main() -> ExitCode {
 
     let profile = CefString::from(profile_dir.to_string_lossy().as_ref());
     let cef_settings = Settings {
-        no_sandbox: (!settings.sandbox) as _,
+        // Inside Flatpak the bubblewrap sandbox replaces Chromium's own (which cannot start there).
+        no_sandbox: (!settings.sandbox || std::path::Path::new("/.flatpak-info").exists()) as _,
         root_cache_path: profile.clone(),
         cache_path: profile,
         persist_session_cookies: 1,

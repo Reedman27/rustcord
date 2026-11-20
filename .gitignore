@@ -1,2 +1,5 @@
-target/
 *.log
+.flatpak-builder/
+build-flatpak/
+dist/
+target/

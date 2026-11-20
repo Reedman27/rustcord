@@ -94,6 +94,24 @@ Put theme CSS in `~/.config/rustcord/themes/<name>.css` and list the name in `th
 `var(--rustcord-accent)`. Changes apply on the next page load or restart. A malformed settings
 file is kept as `settings.json.bad` and defaults are used.
 
+## Chimera Linux and other musl systems (Flatpak)
+
+Official CEF/Chromium builds are glibc-only and cannot run on musl, and building Chromium
+for musl is not realistic. On Chimera, build the Flatpak instead, which brings its own glibc
+runtime (needs network; first build downloads the runtime, crates and CEF):
+
+```
+apk add flatpak xdg-desktop-portal-gtk
+./scripts/flatpak.sh
+flatpak run dev.rustcord.Rustcord
+flatpak run --command=rustcord dev.rustcord.Rustcord mods install equicord
+```
+
+Inside Flatpak, Chromium's own sandbox is replaced by Flatpak's. Settings live in
+`~/.var/app/dev.rustcord.Rustcord/config/rustcord/`. **Untested**: I could not run
+flatpak-builder here. If it reports a missing runtime branch, bump `49` / `25.08` in
+`packaging/flatpak/dev.rustcord.Rustcord.yml` and `scripts/flatpak.sh` together.
+
 ## Vencord / Equicord (opt-in, off by default)
 
 Rustcord runs the projects' own standalone `*.user.js` builds unmodified at document start,

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Rustcord
+Comment=Rust desktop client for the official Discord web app
+Exec=rustcord %u
+Icon=dev.rustcord.Rustcord
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+MimeType=x-scheme-handler/discord;
+StartupWMClass=rustcord

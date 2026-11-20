@@ -1,0 +1,46 @@
+# Flatpak build for musl distributions such as Chimera Linux.
+# Official CEF (Chromium) builds are glibc-only, so they cannot run natively on musl;
+# Flatpak supplies the glibc runtime. Build with scripts/flatpak.sh.
+app-id: dev.rustcord.Rustcord
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: rustcord
+
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio        # also PipeWire through pipewire-pulse
+  - --device=all               # GPU (dri) and webcams
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --own-name=org.kde.*       # tray icon
+  - --filesystem=xdg-download  # saving files from Discord
+
+modules:
+  - name: rustcord
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      build-args:
+        - --share=network      # cargo crates and the CEF download
+      env:
+        CARGO_HOME: /run/build/rustcord/cargo
+        CEF_PATH: /run/build/rustcord/cef
+    build-commands:
+      - sh scripts/build.sh
+      - mkdir -p /app/lib /app/bin /app/share/applications /app/share/icons/hicolor/256x256/apps
+      - cp -r dist/rustcord /app/lib/rustcord
+      - |
+        printf '#!/bin/sh\nexec /app/lib/rustcord/rustcord "$@"\n' > /app/bin/rustcord
+        chmod +x /app/bin/rustcord
+      - install -Dm644 packaging/flatpak/dev.rustcord.Rustcord.desktop /app/share/applications/dev.rustcord.Rustcord.desktop
+      - cargo run --release -q -p rustcord-core --example dump -- png 256 > /app/share/icons/hicolor/256x256/apps/dev.rustcord.Rustcord.png
+    sources:
+      - type: dir
+        path: ../..
+        skip: [target, dist, .git]
