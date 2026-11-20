@@ -103,6 +103,10 @@ fn main() -> ExitCode {
         state,
     );
 
+    if settings.rpc {
+        start_rpc();
+    }
+
     let profile = CefString::from(profile_dir.to_string_lossy().as_ref());
     let cef_settings = Settings {
         // Inside Flatpak the bubblewrap sandbox replaces Chromium's own (which cannot start there).
@@ -132,4 +136,23 @@ fn main() -> ExitCode {
     run_message_loop();
     shutdown();
     ExitCode::SUCCESS
+}
+
+/// Local Rich Presence server. Failures only disable presence, never the app.
+fn start_rpc() {
+    use rustcord_core::rpc;
+    let hub = std::sync::Arc::new(rpc::Hub::default());
+    match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(dir) => match rpc::serve_ipc(std::path::Path::new(&dir), hub.clone()) {
+            Ok(p) => eprintln!("rustcord: rich presence socket {}", p.display()),
+            Err(e) => eprintln!("rustcord: rich presence socket unavailable: {e}"),
+        },
+        None => eprintln!("rustcord: XDG_RUNTIME_DIR not set, rich presence socket disabled"),
+    }
+    if let Err(e) = rpc::serve_bridge(rpc::BRIDGE_PORT, hub) {
+        eprintln!(
+            "rustcord: rich presence bridge port {} unavailable: {e}",
+            rpc::BRIDGE_PORT
+        );
+    }
 }

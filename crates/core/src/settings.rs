@@ -45,6 +45,9 @@ pub struct Settings {
     /// Path to your own build of the selected client (e.g. with userplugins), used
     /// instead of the installed bundle.
     pub mod_script: Option<String>,
+    /// Rich Presence: accept games on `$XDG_RUNTIME_DIR/discord-ipc-N` and feed the
+    /// Vencord/Equicord "WebRichPresence (arRPC)" plugin on 127.0.0.1:1337.
+    pub rpc: bool,
 }
 
 impl Default for Settings {
@@ -62,6 +65,7 @@ impl Default for Settings {
             color_scheme: None,
             mod_client: None,
             mod_script: None,
+            rpc: true,
         }
     }
 }

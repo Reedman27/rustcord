@@ -130,6 +130,16 @@ The bundle is verified against its recorded hash on every start. Updating is man
 (`mods update`), because the bundle runs with full page privileges. Plain CSS themes still
 go in `~/.config/rustcord/themes/` and `quick.css`, with or without a mod client.
 
+## Rich Presence (RPC)
+
+Rustcord has a built-in, pure-Rust Discord IPC server (`$XDG_RUNTIME_DIR/discord-ipc-N`) so
+games and tools that set a presence work without arRPC or Node. It feeds the
+**WebRichPresence (arRPC)** plugin that Vencord and Equicord include, which connects to
+`ws://127.0.0.1:1337` (loopback only, Discord origins only). Enable that plugin in Discord's
+Vencord/Equicord settings. Tested with a simulated game and bridge client (6 tests); not tested with a
+real game. Not implemented: the browser RPC websocket (port 6463), automatic game detection
+(arRPC's process scanner), Flatpak socket sharing. Set `"rpc": false` to turn it off.
+
 ## Not done (honest list)
 
 - **Never run**, see above.
