@@ -13,6 +13,7 @@ use rustcord_core::{icon, mods, nav, paths, rpc, theme};
 mod cdp;
 #[path = "../../app/src/mods_cli.rs"]
 mod mods_cli;
+mod notify;
 
 #[repr(C)]
 struct RcConfig {
@@ -127,6 +128,7 @@ fn main() -> ExitCode {
     if settings.rpc {
         start_rpc();
     }
+    notify::init(settings.notifications.clone());
 
     let mod_script = settings
         .mod_client

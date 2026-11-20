@@ -4,6 +4,7 @@ pub mod edit;
 pub mod icon;
 pub mod mods;
 pub mod nav;
+pub mod notify;
 pub mod paths;
 pub mod rpc;
 pub mod settings;

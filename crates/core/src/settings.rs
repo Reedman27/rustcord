@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::mods::ModClient;
 use crate::nav::Branch;
+use crate::notify::NotifySettings;
 
 pub const MIN_WIDTH: i32 = 940;
 pub const MIN_HEIGHT: i32 = 500;
@@ -51,6 +52,8 @@ pub struct Settings {
     /// Qt frontend only: while a mod client is enabled, bypass Discord's CSP through a
     /// loopback DevTools port so online themes load. Turn off to avoid opening that port.
     pub mod_csp_bypass: bool,
+    /// Which servers may notify, and unread badges (Qt frontend).
+    pub notifications: NotifySettings,
 }
 
 impl Default for Settings {
@@ -70,6 +73,7 @@ impl Default for Settings {
             mod_script: None,
             rpc: true,
             mod_csp_bypass: true,
+            notifications: NotifySettings::default(),
         }
     }
 }

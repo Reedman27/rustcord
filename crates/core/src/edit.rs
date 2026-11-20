@@ -20,7 +20,7 @@ pub const KEYS: &[&str] = &[
     "color_scheme",
 ];
 
-fn parse_bool(v: &str) -> Result<bool, String> {
+pub fn parse_bool(v: &str) -> Result<bool, String> {
     match v.to_ascii_lowercase().as_str() {
         "true" | "on" | "yes" | "1" => Ok(true),
         "false" | "off" | "no" | "0" => Ok(false),

@@ -5,8 +5,7 @@
 #include <QRegularExpression>
 #include <QFileInfo>
 #include <QCloseEvent>
-#include <QDBusConnection>
-#include <QDBusMessage>
+#include <QPainter>
 #include <QDesktopServices>
 #include <QDir>
 #include <QIcon>
@@ -47,6 +46,8 @@ struct RcConfig {
 int rc_nav_allowed(const char *url);
 void rc_open_external(const char *url);
 void rc_save_window(int x, int y, int w, int h, int maximized);
+int rc_notify(const char *title, const char *body);
+void rc_window_active(int active);
 }
 
 namespace {
@@ -259,20 +260,14 @@ int rc_qt_run(int argc, char **argv, const RcConfig *c) {
     if (!g_themeScript.isEmpty())
         addScript("rustcord-theme", guardOpen + g_themeScript + "\n}", QWebEngineScript::DocumentReady);
 
-    // Desktop notifications over org.freedesktop.Notifications, with the tray balloon as a
-    // fallback when no notification service answers.
+    // Notifications: Rust filters per server and delivers them (D-Bus or portal).
     g_profile->setNotificationPresenter([](std::unique_ptr<QWebEngineNotification> n) {
-        QString title = n->title(), body = n->message();
         n->show();
-        QDBusMessage m = QDBusMessage::createMethodCall(
-            "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-            "org.freedesktop.Notifications", "Notify");
-        body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-        m << "Rustcord" << uint(0) << "rustcord" << title << body << QStringList() << QVariantMap() << int(-1);
-        bool sent = QDBusConnection::sessionBus().isConnected() &&
-                    QDBusConnection::sessionBus().call(m, QDBus::Block, 2000).type() ==
-                        QDBusMessage::ReplyMessage;
-        if (!sent && g_tray) g_tray->showMessage(title, n->message(), g_icon);
+        int r = rc_notify(n->title().toUtf8().constData(), n->message().toUtf8().constData());
+        if (r < 0 && g_tray) g_tray->showMessage(n->title(), n->message(), g_icon);
+    });
+    QObject::connect(&app, &QGuiApplication::applicationStateChanged, [](Qt::ApplicationState st) {
+        rc_window_active(st == Qt::ApplicationActive ? 1 : 0);
     });
 
     // Downloads go to the user's Downloads folder without overwriting existing files.
@@ -324,6 +319,33 @@ int rc_qt_run(int argc, char **argv, const RcConfig *c) {
     int rc = app.exec();
     delete g_main.data();
     return rc;
+}
+
+// Tray icon with the unread count drawn on it, plus a per-server tooltip. Thread-safe.
+void rc_qt_set_badge(int total, const char *tooltip) {
+    QString tip = QString::fromUtf8(tooltip);
+    QMetaObject::invokeMethod(qApp, [total, tip] {
+        if (!g_tray) return;
+        QIcon icon = g_icon;
+        if (total > 0) {
+            QPixmap pm = g_icon.pixmap(64, 64);
+            QPainter p(&pm);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setBrush(QColor(0xed, 0x42, 0x45));
+            p.setPen(Qt::NoPen);
+            p.drawEllipse(QRect(26, 0, 38, 38));
+            p.setPen(Qt::white);
+            QFont f = p.font();
+            f.setBold(true);
+            f.setPixelSize(total > 9 ? 22 : 28);
+            p.setFont(f);
+            p.drawText(QRect(26, 0, 38, 38), Qt::AlignCenter, total > 99 ? "99" : QString::number(total));
+            p.end();
+            icon = QIcon(pm);
+        }
+        g_tray->setIcon(icon);
+        g_tray->setToolTip(tip);
+    }, Qt::QueuedConnection);
 }
 
 // Thread-safe: called from the single-instance thread.

@@ -123,7 +123,13 @@ const CONFIG_USAGE: &str = "usage:
                                        accent_color, color_scheme
   rustcord themes list                 themes found in <config>/themes (* = enabled)
   rustcord themes enable|disable <name>
-  rustcord autostart enable|disable    XDG autostart entry for this executable";
+  rustcord autostart enable|disable    XDG autostart entry for this executable
+  rustcord notify show                 selective notifications (Qt build): which servers may notify
+  rustcord notify mode off|allow|block
+  rustcord notify add|remove <server name>
+  rustcord notify dms on|off           whether DMs pass when mode is allow or block
+  rustcord notify badge on|off         unread count on tray icon and launcher
+  rustcord notify backend auto|daemon|portal";
 
 /// Handle the non-GUI subcommands (`mods`, `config`, `themes`, `autostart`).
 /// Returns `None` when `argv` is a normal launch.
@@ -131,7 +137,7 @@ pub fn dispatch(argv: &[String]) -> Option<ExitCode> {
     let rest = &argv[1.min(argv.len())..];
     match argv.first().map(String::as_str)? {
         "mods" => Some(run(rest)),
-        "config" | "themes" | "autostart" => {
+        "config" | "themes" | "autostart" | "notify" => {
             let result = settings_command(argv[0].as_str(), rest);
             Some(match result {
                 Ok(()) => ExitCode::SUCCESS,
@@ -197,6 +203,40 @@ fn settings_command(cmd: &str, args: &[String]) -> Result<(), String> {
             let xdg = home.parent().ok_or("no config directory")?;
             edit::set_autostart(xdg, &exe.to_string_lossy(), op == "enable")?;
             println!("autostart {op}d");
+            Ok(())
+        }
+        ("notify", Some("show")) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&s.notifications).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
+        ("notify", Some(op)) => {
+            use rustcord_core::notify::Mode;
+            let n = &mut s.notifications;
+            let rest = args[1..].join(" ");
+            match op {
+                "mode" => {
+                    n.mode = match rest.as_str() {
+                        "off" => Mode::Off,
+                        "allow" => Mode::Allow,
+                        "block" => Mode::Block,
+                        _ => return Err("mode must be off, allow or block".into()),
+                    }
+                }
+                "add" if !rest.is_empty() => n.add_server(&rest),
+                "remove" if !rest.is_empty() => n.remove_server(&rest),
+                "dms" => n.dms = edit::parse_bool(&rest)?,
+                "badge" => n.badge = edit::parse_bool(&rest)?,
+                "backend" => match rest.as_str() {
+                    "auto" | "daemon" | "portal" => n.backend = rest.clone(),
+                    _ => return Err("backend must be auto, daemon or portal".into()),
+                },
+                _ => return Err(CONFIG_USAGE.into()),
+            }
+            save(&s)?;
+            println!("ok  (restart Rustcord to apply)");
             Ok(())
         }
         _ => Err(CONFIG_USAGE.into()),

@@ -17,7 +17,7 @@ setTimeout(()=>{
  rep('css',getComputedStyle(document.body).outlineWidth+' '+getComputedStyle(document.body).outlineColor);
  rep('ua',navigator.userAgent);
  rep('webrtc',typeof RTCPeerConnection+' '+typeof navigator.mediaDevices?.getUserMedia);
- Notification.requestPermission().then(p=>{rep('notif',p); new Notification('Hello title',{body:'World'})});
+ Notification.requestPermission().then(p=>{rep('notif',p); setTimeout(()=>['Alice (#general, Allowed Guild)','Bob (#random, Blocked Guild)','Carol'].forEach(t=>new Notification(t,{body:'World'})),6000)});
  const ws=new WebSocket('ws://127.0.0.1:1337');
  ws.onopen=()=>rep('ws','open'); ws.onerror=()=>rep('ws','error');
  ws.onmessage=e=>rep('rpc',e.data);

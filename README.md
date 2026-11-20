@@ -16,7 +16,7 @@ This is an early build. Read "Not done" before relying on it.
 
 ### Verified here
 - `rustcord-core` (URL policy, settings, XDG paths, single instance, theme engine, icon
-  generation): 44 unit tests pass (including Rich Presence over a real socket and websocket).
+  generation): 48 unit tests pass (including Rich Presence over a real socket and websocket).
 - The generated window icon PNG decodes correctly in Pillow, and the theme injection script
   applies, is idempotent and cannot inject markup in a real Chromium page
   (`python3 scripts/verify_assets.py`).
@@ -60,6 +60,7 @@ This is an early build. Read "Not done" before relying on it.
 | Window class (`WM_CLASS` rustcord/Rustcord, role main/popup), window and app icon, minimum size | `app/window.rs`, `app/icon.rs` |
 | `rustcord config show/set`, `themes list/enable/disable`, `autostart enable/disable` (CLI, since there is no settings window) | `core/edit.rs`, `app/mods_cli.rs` |
 | Qt frontend: window, tray (SNI or XEmbed), downloads, D-Bus notifications, CSP bypass for online themes, pop-outs | `crates/qt/` |
+| Selective notifications and unread badges (Qt build): per-server allow/block list, DMs switch, freedesktop notification daemon or XDG portal, tray-icon count, launcher badge | `core/notify.rs`, `crates/qt/src/notify.rs` |
 | XDG config and data directories, no hard-coded paths, no systemd | `core/paths.rs` |
 
 ## Build
@@ -146,6 +147,27 @@ The bundle is verified against its recorded hash on every start. Updating is man
 (`mods update`), because the bundle runs with full page privileges. Plain CSS themes still
 go in `~/.config/rustcord/themes/` and `quick.css`, with or without a mod client.
 
+## Selective notifications (Qt build)
+
+Choose which servers may raise desktop notifications and unread badges:
+
+```
+rustcord-qt notify mode allow          # off (default) | allow | block
+rustcord-qt notify add Rust Lang       # server name as Discord shows it, case-insensitive
+rustcord-qt notify dms off             # DMs follow this switch when mode is allow/block
+rustcord-qt notify show
+rustcord-qt notify backend auto        # auto: portal inside Flatpak, else the notification daemon
+```
+
+Notifications go to `org.freedesktop.Notifications` (dunst, mako, swaync, ...) or the XDG desktop
+portal, and clicking one focuses Rustcord. Allowed ones that arrive while the window is unfocused
+are counted per server: the number is drawn on the tray icon (tooltip lists servers) and sent as a
+Unity LauncherEntry signal for docks that support it. Verified in the virtual-display test: an
+allowed server notifies and badges, a blocked server and a blocked DM do nothing. **Heuristic**:
+the server is read from Discord's notification title `Author (#channel, Server)`; if Discord
+changes that format, those notifications are treated as DMs. Not verified against real Discord,
+and click-to-focus was not exercised. The CEF build has no filtering.
+
 ## Rich Presence (RPC)
 
 Rustcord has a built-in, pure-Rust Discord IPC server (`$XDG_RUNTIME_DIR/discord-ipc-N`) so
@@ -161,8 +183,7 @@ real game. Not implemented: the browser RPC websocket (port 6463), automatic gam
 - **CEF build never run**, see above. The Qt build ran only against a stand-in page.
 - **Tray on Window Maker with the CEF build**: needs a StatusNotifier host (`snixembed`). The Qt
   build falls back to XEmbed, which a dock tray provides.
-- **Notifications**: Qt build sends them over D-Bus (clicking one does not focus the window yet).
-  CEF build: whatever Chromium does by default.
+- **Notifications**: filtering and badges exist for the Qt build only; CEF uses Chromium's default.
 - **Screenshare**: no per-app audio routing (needs PipeWire work). CEF shows Chromium's own
   picker or nothing; Qt 6.7+ gets a simple list dialog (uncompiled here); Qt below 6.7 cannot
   select a source.
