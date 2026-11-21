@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # End-to-end check of the Qt frontend in a virtual display, no Discord account or internet:
 # discord.com is mapped to a local HTTPS stub that reports what it sees. Verifies that the
 # real Equicord bundle runs at document start (plugins register), quick.css is applied, WebRTC

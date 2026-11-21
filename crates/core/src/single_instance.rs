@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Single instance via a Unix socket (same idea as Vesktop's `vesktop.sock`).
 //!
 //! The first process binds the socket and listens. Later processes connect, send one
@@ -18,12 +19,15 @@ pub enum Message {
     Focus,
     /// Navigate to a `discord://` deep link and bring the window to the front.
     Open(String),
+    /// Open the settings window (Qt frontend; the CEF build just focuses).
+    Settings,
 }
 
 impl Message {
     fn to_line(&self) -> String {
         match self {
             Message::Focus => "focus\n".to_string(),
+            Message::Settings => "settings\n".to_string(),
             // newlines in a URI would let a caller smuggle a second command
             Message::Open(u) => format!("open {}\n", u.replace(['\n', '\r'], "")),
         }
@@ -33,6 +37,9 @@ impl Message {
         let line = line.trim_end_matches(['\n', '\r']);
         if line == "focus" {
             return Some(Message::Focus);
+        }
+        if line == "settings" {
+            return Some(Message::Settings);
         }
         let uri = line.strip_prefix("open ")?;
         // Only deep links are accepted, never arbitrary URLs.
@@ -149,6 +156,8 @@ mod tests {
         );
         assert_eq!(Message::parse("open https://evil.example/\n"), None);
         assert_eq!(Message::parse("open file:///etc/passwd\n"), None);
+        assert_eq!(Message::parse("settings\n"), Some(Message::Settings));
+        assert_eq!(Message::Settings.to_line(), "settings\n");
         assert_eq!(Message::parse("quit\n"), None);
         assert_eq!(Message::parse(""), None);
         assert_eq!(

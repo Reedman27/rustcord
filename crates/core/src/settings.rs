@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! User settings and window state, stored as JSON with atomic writes.
 
 use std::fs;
@@ -52,6 +53,10 @@ pub struct Settings {
     /// Opt-in: detect running games and show them as "Playing ...". Needs
     /// `rustcord rpc update-games` once to download Discord's list of known games.
     pub rpc_detect_games: bool,
+    /// Extra exact web origins (e.g. `https://game.example`) allowed to set a presence over the
+    /// browser RPC websocket (127.0.0.1:6463). Discord's own origins are always allowed;
+    /// native tools send no origin and are always allowed.
+    pub rpc_browser_origins: Vec<String>,
     /// Qt frontend only: while a mod client is enabled, bypass Discord's CSP through a
     /// loopback DevTools port so online themes load. Turn off to avoid opening that port.
     pub mod_csp_bypass: bool,
@@ -76,6 +81,7 @@ impl Default for Settings {
             mod_script: None,
             rpc: true,
             rpc_detect_games: false,
+            rpc_browser_origins: Vec::new(),
             mod_csp_bypass: true,
             notifications: NotifySettings::default(),
         }

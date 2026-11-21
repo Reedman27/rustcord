@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Vencord / Equicord support: opt-in loader for the projects' own standalone builds.
 //!
 //! The official `*.user.js` builds are self-contained and only need `unsafeWindow` and

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! `rustcord mods install|update|status|enable|disable ...` (no CEF involved).
 
 use std::io::Read;

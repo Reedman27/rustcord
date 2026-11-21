@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Process-wide configuration, set once in `main` before CEF starts.
 
 use std::path::PathBuf;

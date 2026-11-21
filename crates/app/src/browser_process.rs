@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! CEF application object and browser-process startup.
 
 use std::cell::RefCell;

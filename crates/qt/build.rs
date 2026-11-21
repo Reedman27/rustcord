@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Compiles the C++ shim against Qt6 WebEngine Widgets, found through pkg-config.
 use std::process::Command;
 

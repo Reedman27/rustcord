@@ -9,3 +9,8 @@ Terminal=false
 Categories=Network;InstantMessaging;Chat;
 MimeType=x-scheme-handler/discord;
 StartupWMClass=rustcord
+Actions=settings;
+
+[Desktop Action settings]
+Name=Settings
+Exec=rustcord-qt --settings

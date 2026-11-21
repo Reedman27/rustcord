@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # Build Rustcord and assemble a runnable directory in dist/rustcord.
 #
 # The cef crate downloads a matching CEF (Chromium) build the first time it compiles. We pin

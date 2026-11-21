@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Selective notifications: choose which servers (and whether DMs) may raise desktop
 //! notifications and unread badges. Pure logic, shared by the frontends.
 //!

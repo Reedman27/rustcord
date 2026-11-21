@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Checks that need an independent implementation: decode the generated PNG with Pillow and
 run the theme injection script in a real Chromium (Playwright).
 

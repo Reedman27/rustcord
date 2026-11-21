@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Open links in the user's default browser.
 
 use std::process::{Command, Stdio};

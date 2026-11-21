@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Automatic game detection for Rich Presence, like arRPC's process scanner: running
 //! processes are matched against Discord's public "detectable applications" list and shown
 //! as "Playing <game>". Opt-in (`rpc_detect_games`), because it announces what you run.

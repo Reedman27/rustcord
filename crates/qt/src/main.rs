@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Rustcord on Qt WebEngine: the frontend for systems where Chromium Embedded Framework
 //! has no build (musl, e.g. Chimera Linux). Same settings, themes, mods and Rich Presence
 //! as the CEF frontend; only the window and web engine differ.
@@ -34,12 +35,14 @@ struct RcConfig {
     tray: c_int,
     close_to_tray: c_int,
     sandbox: c_int,
+    open_settings: c_int,
 }
 
 extern "C" {
     fn rc_qt_run(argc: c_int, argv: *mut *mut c_char, cfg: *const RcConfig) -> c_int;
     fn rc_qt_show();
     fn rc_qt_open(url: *const c_char);
+    fn rc_qt_show_settings();
 }
 
 static STATE_PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
@@ -86,9 +89,58 @@ pub extern "C" fn rc_save_window(x: c_int, y: c_int, w: c_int, h: c_int, maximiz
     }
 }
 
+fn to_c_string(s: String) -> *mut c_char {
+    // Interior NULs cannot occur in the JSON we build, but never panic across the FFI.
+    CString::new(s.replace('\0', "")).map_or(std::ptr::null_mut(), CString::into_raw)
+}
+
+/// Settings window: the fields as JSON. Free with `rc_string_free`.
+#[no_mangle]
+pub extern "C" fn rc_settings_fields() -> *mut c_char {
+    let dir = paths::config_dir();
+    let s: Settings = rs::load_or_default(&dir.join("settings.json"));
+    let autostart_on = dir
+        .parent()
+        .is_some_and(|x| rustcord_core::edit::autostart_path(x).exists());
+    let fields = rustcord_core::edit::fields(&s, &dir, autostart_on);
+    to_c_string(serde_json::to_string(&fields).unwrap_or_else(|_| "[]".into()))
+}
+
+/// Settings window: apply one change. Returns NULL on success or an error message to show
+/// (free with `rc_string_free`). The value is validated exactly like `config set`.
+#[no_mangle]
+pub extern "C" fn rc_settings_apply(key: *const c_char, value: *const c_char) -> *mut c_char {
+    let (key, value) = (cstr(key), cstr(value));
+    let dir = paths::config_dir();
+    let path = dir.join("settings.json");
+    let mut s: Settings = rs::load_or_default(&path);
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let result =
+        rustcord_core::edit::apply_field(&mut s, &dir, &exe, &key, &value).and_then(|()| {
+            rs::save_atomic(&path, &s).map_err(|e| format!("cannot save settings: {e}"))
+        });
+    match result {
+        Ok(()) => std::ptr::null_mut(),
+        Err(e) => to_c_string(e),
+    }
+}
+
+/// # Safety
+/// `p` must be NULL or a pointer returned by `rc_settings_fields` / `rc_settings_apply`,
+/// freed at most once.
+#[no_mangle]
+pub unsafe extern "C" fn rc_string_free(p: *mut c_char) {
+    if !p.is_null() {
+        drop(CString::from_raw(p));
+    }
+}
+
 fn on_ipc(msg: Message) {
     match msg {
         Message::Focus => unsafe { rc_qt_show() },
+        Message::Settings => unsafe { rc_qt_show_settings() },
         Message::Open(uri) => {
             let branch = BRANCH.get().copied().unwrap_or(nav::Branch::Stable);
             if let Ok(url) = CString::new(nav::deep_link_url(branch, Some(&uri))) {
@@ -112,8 +164,10 @@ fn main() -> ExitCode {
     let _ = BRANCH.set(settings.branch);
 
     let deep_link = argv.iter().find(|a| a.starts_with("discord://")).cloned();
+    let open_settings = argv.iter().any(|a| a == "--settings");
     let message = match &deep_link {
         Some(uri) => Message::Open(uri.clone()),
+        None if open_settings => Message::Settings,
         None => Message::Focus,
     };
     let _guard = match single_instance::acquire(&paths::runtime_socket(), &message, on_ipc) {
@@ -204,6 +258,7 @@ fn main() -> ExitCode {
         tray: settings.tray as c_int,
         close_to_tray: settings.close_to_tray as c_int,
         sandbox: settings.sandbox as c_int,
+        open_settings: open_settings as c_int,
     };
 
     // Qt wants a mutable, NUL-terminated argv that outlives the call.

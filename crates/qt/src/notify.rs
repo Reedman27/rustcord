@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Desktop notifications with per-server filtering and unread badges.
 //!
 //! Qt hands each web notification to `rc_notify`. The policy in `rustcord_core::notify`

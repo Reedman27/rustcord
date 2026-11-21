@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Rustcord entry point.
 //!
 //! One binary plays both roles: the browser process (this file's main path) and CEF's

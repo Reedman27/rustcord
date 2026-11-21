@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Dev helper for the verification scripts in `scripts/`.
 //!   cargo run -q -p rustcord-core --example dump -- png <size>     > icon.png
 //!   cargo run -q -p rustcord-core --example dump -- theme-script   < theme.css   > script.js

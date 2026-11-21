@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 // libcef.so is copied next to the executable by scripts/build.sh. Without an rpath the
 // dynamic loader would not look there and the app would fail to start. The Chromium helper
 // processes are this same executable, so they get the same rpath.

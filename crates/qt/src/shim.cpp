@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 // Qt WebEngine window for Rustcord. Policy (navigation rules, settings, themes, mods,
 // presence) lives in Rust; this file only owns the window, profile and Qt plumbing.
 // No Q_OBJECT classes, so no moc step is needed.
@@ -14,7 +15,23 @@
 #include <QPointer>
 #include <QStandardPaths>
 #include <QSystemTrayIcon>
+#include <QMap>
 #include <QTimer>
+#include <QShortcut>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QVBoxLayout>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QLineEdit>
+#include <QLabel>
+#include <QSignalBlocker>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QScrollArea>
 #include <QUrl>
 #include <QWebEngineDownloadRequest>
 #include <QWebEngineFullScreenRequest>
@@ -40,7 +57,7 @@ struct RcConfig {
     const unsigned char *icon_png;
     unsigned long icon_len;
     int x, y, w, h;
-    int has_pos, maximized, start_minimized, tray, close_to_tray, sandbox;
+    int has_pos, maximized, start_minimized, tray, close_to_tray, sandbox, open_settings;
 };
 // Implemented in Rust.
 int rc_nav_allowed(const char *url);
@@ -48,6 +65,9 @@ void rc_open_external(const char *url);
 void rc_save_window(int x, int y, int w, int h, int maximized);
 int rc_notify(const char *title, const char *body);
 void rc_window_active(int active);
+char *rc_settings_fields();
+char *rc_settings_apply(const char *key, const char *value);
+void rc_string_free(char *s);
 }
 
 namespace {
@@ -198,6 +218,122 @@ QWebEngineView *View::popup() {
     return pop;
 }
 
+
+QPointer<QDialog> g_settings;
+
+// Take ownership of a string returned by Rust.
+QString takeString(char *p) {
+    if (!p) return QString();
+    QString s = QString::fromUtf8(p);
+    rc_string_free(p);
+    return s;
+}
+
+// Settings window, generated from the field list that Rust provides. Every change is validated
+// and saved by Rust (the same code as `rustcord-qt config set`), so this file holds no policy.
+void showSettings() {
+    if (g_settings) {
+        g_settings->show();
+        g_settings->raise();
+        g_settings->activateWindow();
+        return;
+    }
+    QJsonArray fields = QJsonDocument::fromJson(takeString(rc_settings_fields()).toUtf8()).array();
+    QDialog *dlg = new QDialog(g_main ? g_main.data() : nullptr);
+    g_settings = dlg;
+    dlg->setObjectName("rustcord-settings");
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setWindowTitle("Rustcord settings");
+    dlg->setWindowIcon(g_icon);
+    QVBoxLayout *outer = new QVBoxLayout(dlg);
+    QScrollArea *scroll = new QScrollArea(dlg);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    QWidget *body = new QWidget;
+    QVBoxLayout *col = new QVBoxLayout(body);
+    QLabel *status = new QLabel("Changes are saved immediately. Most apply after a restart.");
+    status->setWordWrap(true);
+
+    auto apply = [status](const QString &key, const QString &value) -> bool {
+        QString err = takeString(rc_settings_apply(key.toUtf8().constData(), value.toUtf8().constData()));
+        if (err.isEmpty()) {
+            status->setText("Saved. Most settings apply after you restart Rustcord.");
+            return true;
+        }
+        status->setText("Not saved: " + err);
+        return false;
+    };
+
+    QMap<QString, QFormLayout *> groups;
+    QStringList order;
+    for (const QJsonValue &fv : fields) {
+        QJsonObject f = fv.toObject();
+        QString group = f["group"].toString(), key = f["key"].toString();
+        QString label = f["label"].toString(), help = f["help"].toString();
+        QString kind = f["kind"].toString(), value = f["value"].toString();
+        if (!groups.contains(group)) {
+            QGroupBox *box = new QGroupBox(group);
+            QFormLayout *form = new QFormLayout(box);
+            col->addWidget(box);
+            groups[group] = form;
+        }
+        QFormLayout *form = groups[group];
+        QWidget *w = nullptr;
+        if (kind == "bool") {
+            QCheckBox *cb = new QCheckBox(label);
+            cb->setObjectName(key);
+            cb->setChecked(value == "on");
+            QObject::connect(cb, &QCheckBox::toggled, cb, [cb, key, apply](bool on) {
+                if (!apply(key, on ? "on" : "off")) {
+                    QSignalBlocker b(cb);
+                    cb->setChecked(!on);
+                }
+            });
+            w = cb;
+            if (!help.isEmpty()) cb->setToolTip(help);
+            form->addRow(cb);
+            continue;
+        } else if (kind == "choice") {
+            QComboBox *cbx = new QComboBox;
+            cbx->setObjectName(key);
+            for (const QJsonValue &o : f["options"].toArray()) cbx->addItem(o.toString());
+            cbx->setCurrentText(value);
+            QString *prev = new QString(value);
+            QObject::connect(cbx, &QComboBox::currentTextChanged, cbx, [cbx, key, apply, prev](const QString &t) {
+                if (apply(key, t)) { *prev = t; return; }
+                QSignalBlocker b(cbx);
+                cbx->setCurrentText(*prev);
+            });
+            QObject::connect(cbx, &QObject::destroyed, [prev] { delete prev; });
+            w = cbx;
+        } else {
+            QLineEdit *le = new QLineEdit(value);
+            le->setObjectName(key);
+            QString *prev = new QString(value);
+            QObject::connect(le, &QLineEdit::editingFinished, le, [le, key, apply, prev] {
+                QString t = le->text().trimmed();
+                if (t == *prev) return;
+                if (apply(key, t)) { *prev = t; return; }
+                QSignalBlocker b(le);
+                le->setText(*prev);
+            });
+            QObject::connect(le, &QObject::destroyed, [prev] { delete prev; });
+            w = le;
+        }
+        if (!help.isEmpty()) w->setToolTip(help);
+        form->addRow(label + ":", w);
+    }
+    col->addStretch(1);
+    scroll->setWidget(body);
+    outer->addWidget(scroll, 1);
+    outer->addWidget(status);
+    QDialogButtonBox *bb = new QDialogButtonBox(QDialogButtonBox::Close);
+    QObject::connect(bb, &QDialogButtonBox::rejected, dlg, &QDialog::close);
+    outer->addWidget(bb);
+    dlg->resize(460, 560);
+    dlg->show();
+}
+
 void showMain() {
     if (!g_main) return;
     g_main->showNormal();
@@ -298,6 +434,7 @@ int rc_qt_run(int argc, char **argv, const RcConfig *c) {
     });
     v->load(QUrl(QString::fromUtf8(c->start_url)));
     v->setMinimumSize(940, 500);
+    new QShortcut(QKeySequence("Ctrl+,"), v, [] { showSettings(); });
     if (c->start_minimized) v->showMinimized();
     else if (c->maximized) v->showMaximized();
     else v->show();
@@ -306,6 +443,7 @@ int rc_qt_run(int argc, char **argv, const RcConfig *c) {
         g_tray = new QSystemTrayIcon(g_icon, &app);
         QMenu *menu = new QMenu();
         menu->addAction("Show Rustcord", [] { showMain(); });
+        menu->addAction("Settings\u2026", [] { showSettings(); });
         menu->addAction("Quit", [] {
             g_quitting = true;
             if (g_main) g_main->saveState();
@@ -318,6 +456,8 @@ int rc_qt_run(int argc, char **argv, const RcConfig *c) {
         });
         g_tray->show();
     }
+
+    if (c->open_settings) QTimer::singleShot(0, [] { showSettings(); });
 
     int rc = app.exec();
     delete g_main.data();
@@ -354,6 +494,9 @@ void rc_qt_set_badge(int total, const char *tooltip) {
 // Thread-safe: called from the single-instance thread.
 void rc_qt_show() {
     QMetaObject::invokeMethod(qApp, [] { showMain(); }, Qt::QueuedConnection);
+}
+void rc_qt_show_settings() {
+    QMetaObject::invokeMethod(qApp, [] { showSettings(); }, Qt::QueuedConnection);
 }
 void rc_qt_open(const char *url) {
     QString u = QString::fromUtf8(url);

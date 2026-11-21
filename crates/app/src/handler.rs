@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Browser-level handlers: lifecycle, titles, navigation policy, media permissions.
 
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -131,7 +132,7 @@ pub fn handle_ipc(msg: Message) {
         return;
     };
     let mut task = match msg {
-        Message::Focus => ShowMainWindow::new(inner),
+        Message::Focus | Message::Settings => ShowMainWindow::new(inner),
         Message::Open(uri) => {
             let url = nav::deep_link_url(config::get().settings.branch, Some(&uri));
             OpenUrl::new(inner, url)

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Renderer-process side: runs the Vencord/Equicord bundle at document start.
 //!
 //! The renderer is sandboxed and cannot read files, so the browser process reads and

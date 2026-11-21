@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Editing settings from the command line (there is no settings window), plus the XDG
 //! autostart entry. Pure logic, no CEF or Qt.
 
@@ -128,6 +129,166 @@ pub fn set_autostart(xdg_config_home: &Path, exec: &str, enable: bool) -> Result
     }
 }
 
+/// One row of the settings window: a switch, a choice or a short text value. The window is
+/// generated from this list, so the CLI (`config set`) and the window share one validation path.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Field {
+    pub key: String,
+    pub group: &'static str,
+    pub label: String,
+    pub help: &'static str,
+    /// `bool` (value `on`/`off`), `choice` (one of `options`) or `text`.
+    pub kind: &'static str,
+    pub options: Vec<String>,
+    pub value: String,
+}
+
+fn onoff(b: bool) -> String {
+    if b { "on" } else { "off" }.to_string()
+}
+
+fn boolean(key: &str, group: &'static str, label: &str, help: &'static str, v: bool) -> Field {
+    Field {
+        key: key.into(),
+        group,
+        label: label.into(),
+        help,
+        kind: "bool",
+        options: vec![],
+        value: onoff(v),
+    }
+}
+
+/// The fields of the settings window for the current settings. `autostart_on` is whether the
+/// XDG autostart entry exists; themes are the `.css` files found in `<config>/themes`.
+pub fn fields(s: &Settings, config_dir: &Path, autostart_on: bool) -> Vec<Field> {
+    let branch = serde_json::to_value(s.branch)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| "stable".into());
+    let mut out = vec![
+        Field {
+            key: "branch".into(),
+            group: "General",
+            label: "Discord branch".into(),
+            help: "Which Discord web app to load.",
+            kind: "choice",
+            options: vec!["stable".into(), "ptb".into(), "canary".into()],
+            value: branch,
+        },
+        boolean(
+            "start_minimized",
+            "General",
+            "Start minimized",
+            "",
+            s.start_minimized,
+        ),
+        boolean(
+            "autostart",
+            "General",
+            "Start at login",
+            "Adds an XDG autostart entry.",
+            autostart_on,
+        ),
+        boolean(
+            "tray",
+            "Tray",
+            "Show tray icon",
+            "Needs a tray host (a dock tray works).",
+            s.tray,
+        ),
+        boolean(
+            "close_to_tray",
+            "Tray",
+            "Close button hides to tray",
+            "Only applies while the tray icon is registered.",
+            s.close_to_tray,
+        ),
+        Field {
+            key: "color_scheme".into(),
+            group: "Appearance",
+            label: "Color scheme".into(),
+            help: "Force dark or light; none follows Discord.",
+            kind: "choice",
+            options: vec!["none".into(), "dark".into(), "light".into()],
+            value: s.color_scheme.clone().unwrap_or_else(|| "none".into()),
+        },
+        Field {
+            key: "accent_color".into(),
+            group: "Appearance",
+            label: "Accent color".into(),
+            help: "#rgb or #rrggbb, or none. Available to themes as --rustcord-accent.",
+            kind: "text",
+            options: vec![],
+            value: s.accent_color.clone().unwrap_or_else(|| "none".into()),
+        },
+        boolean(
+            "rpc",
+            "Rich Presence",
+            "Accept games over Discord IPC",
+            "Needs the Vencord/Equicord arRPC plugin.",
+            s.rpc,
+        ),
+        boolean(
+            "rpc_detect_games",
+            "Rich Presence",
+            "Detect running games",
+            "Run `rpc update-games` once to download the game list.",
+            s.rpc_detect_games,
+        ),
+        boolean(
+            "disable_background_throttling",
+            "Advanced",
+            "Keep running in the background",
+            "Stops Chromium throttling voice and notifications while hidden.",
+            s.disable_background_throttling,
+        ),
+        boolean(
+            "sandbox",
+            "Advanced",
+            "Chromium sandbox",
+            "Turn off only if the sandbox cannot start on your system.",
+            s.sandbox,
+        ),
+        boolean(
+            "mod_csp_bypass",
+            "Advanced",
+            "Let online themes load (Qt)",
+            "Opens a loopback DevTools port while a mod client is enabled.",
+            s.mod_csp_bypass,
+        ),
+    ];
+    for name in theme::discover(&config_dir.join("themes")) {
+        out.push(boolean(
+            &format!("theme:{name}"),
+            "Themes",
+            &name,
+            "",
+            s.themes.contains(&name),
+        ));
+    }
+    out
+}
+
+/// Apply one settings-window change. Handles `autostart`, `theme:<name>` and every key
+/// `set_key` knows; nothing is changed if the value is rejected.
+pub fn apply_field(
+    s: &mut Settings,
+    config_dir: &Path,
+    exe: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    if key == "autostart" {
+        let xdg = config_dir.parent().ok_or("no config directory")?;
+        return set_autostart(xdg, exe, parse_bool(value)?);
+    }
+    if let Some(name) = key.strip_prefix("theme:") {
+        return set_theme(s, config_dir, name, parse_bool(value)?);
+    }
+    set_key(s, key, value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +355,42 @@ mod tests {
         set_autostart(&d, "/x", false).unwrap(); // already gone: fine
         assert!(autostart_entry("/a b").is_err());
         assert!(autostart_entry("/a%f").is_err());
+    }
+
+    #[test]
+    fn window_fields_round_trip_through_apply() {
+        let d = tmp("fields");
+        let cfg = d.join("rustcord");
+        fs::create_dir_all(cfg.join("themes")).unwrap();
+        fs::write(cfg.join("themes/midnight.css"), "a{}").unwrap();
+        let mut s = Settings::default();
+        let f = fields(&s, &cfg, false);
+        // Every non-theme, non-autostart field must be accepted by set_key as it is shown.
+        for fld in &f {
+            let mut c = s.clone();
+            assert!(
+                apply_field(&mut c, &cfg, "/bin/x", &fld.key, &fld.value).is_ok(),
+                "{} = {}",
+                fld.key,
+                fld.value
+            );
+            if fld.kind == "choice" {
+                assert!(fld.options.contains(&fld.value), "{}", fld.key);
+            }
+        }
+        assert!(f
+            .iter()
+            .any(|x| x.key == "theme:midnight" && x.value == "off"));
+        apply_field(&mut s, &cfg, "/bin/x", "theme:midnight", "on").unwrap();
+        apply_field(&mut s, &cfg, "/bin/x", "branch", "ptb").unwrap();
+        apply_field(&mut s, &cfg, "/bin/x", "autostart", "on").unwrap();
+        assert!(autostart_path(&d).exists());
+        let f = fields(&s, &cfg, true);
+        let get = |k: &str| f.iter().find(|x| x.key == k).unwrap().value.clone();
+        assert_eq!(get("theme:midnight"), "on");
+        assert_eq!(get("branch"), "ptb");
+        assert_eq!(get("autostart"), "on");
+        assert!(apply_field(&mut s, &cfg, "/bin/x", "theme:../x", "on").is_err());
+        assert!(apply_field(&mut s, &cfg, "/bin/x", "accent_color", "red;}").is_err());
     }
 }

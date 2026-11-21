@@ -7,8 +7,11 @@ Rust owns the process, windows, settings, themes and desktop integration.
 It does not touch user tokens, automate accounts or call private endpoints. You sign in to
 discord.com in the embedded browser like in any browser.
 
-License: LGPL-3.0-or-later (see `COPYING.LESSER` and `COPYING`). No code was copied from
-the reference projects (Vesktop, Vencord and others); behaviour was reimplemented in Rust.
+License: GNU LGPL, version 3 or later (`LGPL-3.0-or-later`); every source file carries an
+SPDX header. `COPYING.LESSER` is the license; `COPYING` is the GPLv3 text, which the LGPLv3
+incorporates by reference and which must ship with it. It is not a second, dual license.
+No code was copied from the reference projects (Vesktop, Vencord and others); behaviour was
+reimplemented in Rust.
 
 ## Status
 
@@ -16,7 +19,7 @@ This is an early build. Read "Not done" before relying on it.
 
 ### Verified here
 - `rustcord-core` (URL policy, settings, XDG paths, single instance, theme engine, icon
-  generation): 51 unit tests pass (including Rich Presence over a real socket and websocket).
+  generation): 54 unit tests pass (including Rich Presence over a real socket and both websocket transports).
 - The generated window icon PNG decodes correctly in Pillow, and the theme injection script
   applies, is idempotent and cannot inject markup in a real Chromium page
   (`python3 scripts/verify_assets.py`).
@@ -32,6 +35,12 @@ This is an early build. Read "Not done" before relying on it.
   plugins at document start, `quick.css`, a CSP-blocked external stylesheet made to load by the
   DevTools bypass, WebRTC APIs, a desktop notification arriving on D-Bus, and a simulated game's
   Rich Presence reaching the page and being cleared again.
+
+- The Qt **settings window** (`rustcord-qt --settings`, tray menu, Ctrl+,) opens in a virtual
+  display; toggling checkboxes with the keyboard changed `settings.json` and created the autostart
+  entry, and a second `--settings` launch reused the running window. Looks and layout checked in a
+  screenshot only on Qt 6.4 / xcb.
+- `scripts/install-qt.sh` installs the binary, desktop entry and icon into a temp prefix.
 
 ### Not verified (never run)
 - The **CEF** application (`rustcord`) has not been linked or launched; its sandbox could not run
@@ -61,6 +70,8 @@ This is an early build. Read "Not done" before relying on it.
 | `rustcord config show/set`, `themes list/enable/disable`, `autostart enable/disable` (CLI, since there is no settings window) | `core/edit.rs`, `app/mods_cli.rs` |
 | Qt frontend: window, tray (SNI or XEmbed), downloads, D-Bus notifications, CSP bypass for online themes, pop-outs | `crates/qt/` |
 | Selective notifications and unread badges (Qt build): per-server allow/block list, DMs switch, freedesktop notification daemon or XDG portal, tray-icon count, launcher badge | `core/notify.rs`, `crates/qt/src/notify.rs` |
+| Settings window (Qt build): switches, choices, accent colour, themes, autostart; each change is validated and saved by the same code as `config set`. Open with the tray menu, Ctrl+, or `rustcord-qt --settings` | `core/edit.rs`, `qt/src/shim.cpp` |
+| Browser RPC websocket on `127.0.0.1:6463..6472` (Discord's own origins plus `rpc_browser_origins`; native tools without an Origin) | `core/rpc.rs` |
 | XDG config and data directories, no hard-coded paths, no systemd | `core/paths.rs` |
 
 ## Build
@@ -177,8 +188,17 @@ games and tools that set a presence work without arRPC or Node. It feeds the
 Vencord/Equicord settings. Tested with a simulated game and bridge client (6 tests); not tested with a
 real game. Game detection is opt-in: `rustcord-qt rpc update-games` downloads Discord's list of known games,
 then `config set rpc_detect_games on` shows running ones as playing (process matching, including
-Wine paths, unit-tested against a fake /proc; the real list was not downloadable here). Not
-implemented: the browser RPC websocket (port 6463), Flatpak socket sharing. Set `"rpc": false` to turn it off.
+Wine paths, unit-tested against a fake /proc; the real list was not downloadable here).
+
+The browser transport (`ws://127.0.0.1:6463/?v=1&client_id=<id>&encoding=json`, ports 6463 to
+6472) lets web pages and tools that use Discord's browser RPC set a presence. To keep random
+websites from changing your status, a browser page is accepted only from Discord's own origins
+or an exact origin you list in `rpc_browser_origins` in `settings.json`; clients that send no
+Origin (native tools) are always accepted. Only `SET_ACTIVITY` is implemented: invites, deep
+links and the rest of the RPC command set are acknowledged and ignored. Tested with a
+simulated page (connect, set, clear on close, rejected origins, bad version and client id);
+not with a real web game. Not implemented: Flatpak socket sharing. Set `"rpc": false` to turn
+all of it off.
 
 ## Not done (honest list)
 
@@ -192,17 +212,19 @@ implemented: the browser RPC websocket (port 6463), Flatpak socket sharing. Set 
 - **Vencord/Equicord**: plugins that need Vesktop's native layer (`VencordNative`) are
   unavailable; cross-origin requests use a `fetch` shim, so hosts without CORS headers fail.
   Equicloud sync is not implemented.
-- **Rich Presence**: no browser RPC websocket (port 6463). Game detection exists but was only tested
-  against a fake process table and a hand-written list.
+- **Rich Presence**: the browser RPC handles `SET_ACTIVITY` only. Game detection exists but was only
+  tested against a fake process table and a hand-written list.
 - **Global shortcuts and badge count**: not implemented (no portable way on plain X11 without
   grabbing keys; I did not want to guess).
 - **Frameless window mode**, multiple main windows, **audio device enumeration**: not implemented.
-- **Settings window and Slint interface**: none. Use the CLI or edit JSON. In a hybrid client the
-  web page is the UI; I did not add native windows with nothing to show.
+- **Settings window**: Qt build only (the CEF build still uses the CLI). It covers the common
+  switches; `mod_client`, notification rules and `extra_switches` are still CLI or JSON. No Slint
+  interface.
 - **Plugin system (WASM)**: not started, no placeholder on purpose.
 - **Overlay**: not started.
-- **Packaging**: `.desktop` file, build scripts and an untested Flatpak recipe. No ebuild, apk
-  or AppImage.
+- **Packaging**: `.desktop` file, `scripts/install-qt.sh`, an untested Flatpak recipe and a
+  draft Chimera `cports` template (`packaging/chimera/template.py`, never built; needs a release
+  tag, the repo URL and a checksum). No ebuild, apk or AppImage.
 - **Proprietary codecs**: official CEF builds lack H.264/AAC/Widevine (calls use VP8/VP9/Opus and
   are unaffected). Qt WebEngine depends on how your distro built it.
 
@@ -212,6 +234,6 @@ implemented: the browser RPC websocket (port 6463), Flatpak socket sharing. Set 
 crates/core   pure logic, fully unit-tested, no CEF
 crates/app    the CEF application (binary: rustcord)
 crates/qt     the Qt WebEngine application (binary: rustcord-qt), C++ shim in src/shim.cpp
-packaging/    desktop entry
+packaging/    desktop entry, icon, Flatpak recipe, draft Chimera template
 scripts/      build, Flatpak and verification scripts (qt_e2e/ = virtual-display test)
 ```

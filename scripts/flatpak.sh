@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # Build and install Rustcord as a Flatpak (for musl systems such as Chimera Linux, where the
 # glibc-only Chromium/CEF binaries cannot run natively).
 #

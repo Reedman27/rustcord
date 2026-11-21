@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Generated application icon (tray and window), so no image asset has to be shipped.
 
 /// ARGB32, network byte order (A, R, G, B per pixel), as the StatusNotifierItem

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Run the real Vencord/Equicord userscript builds, wrapped exactly as Rustcord wraps them,
 in headless Chromium against a stub discord.com page. Usage: verify_mods.py <bundle.user.js>..."""
 import subprocess, sys, pathlib

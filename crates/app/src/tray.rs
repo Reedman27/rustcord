@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! System tray through the StatusNotifierItem protocol (ksni).
 //!
 //! Chromium (and Vesktop) fail if the tray is created before a StatusNotifierHost exists,

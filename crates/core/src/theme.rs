@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Theme engine: user CSS files plus an accent colour, turned into one script that
 //! installs a `<style>` element in the page. Pure logic, no CEF.
 //!

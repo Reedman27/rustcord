@@ -1,17 +1,19 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Rich Presence for the web app, compatible with games that speak Discord's local IPC
 //! protocol (`$XDG_RUNTIME_DIR/discord-ipc-N`) and with the arRPC bridge plugin that Vencord
 //! and Equicord ship ("WebRichPresence (arRPC)"), which listens on `ws://127.0.0.1:1337`.
 //!
 //! Games connect to the unix socket and send `SET_ACTIVITY`; each update is forwarded to
-//! connected bridge clients as `{"activity":{..},"pid":N,"socketId":".."}`. Not implemented:
-//! the websocket RPC server on port 6463 and automatic game detection (arRPC has both).
+//! connected bridge clients as `{"activity":{..},"pid":N,"socketId":".."}`. Web pages and
+//! tools that use Discord's browser transport connect to `ws://127.0.0.1:6463..6472` instead
+//! (see [`serve_browser`]). Automatic game detection lives in `games.rs`.
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -20,6 +22,9 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 pub const BRIDGE_PORT: u16 = 1337;
+/// Discord's browser RPC transport tries these ports in order (same range as the real client).
+pub const BROWSER_PORTS: std::ops::RangeInclusive<u16> = 6463..=6472;
+const MAX_BROWSER_CONNECTIONS: usize = 32;
 const MAX_FRAME: usize = 64 * 1024;
 
 const OP_HANDSHAKE: u32 = 0;
@@ -129,6 +134,45 @@ fn bridge_message(activity: Value, pid: u64, socket_id: &str) -> String {
     json!({ "activity": activity, "pid": pid, "socketId": socket_id }).to_string()
 }
 
+/// The READY event both transports send after a valid handshake.
+fn ready_event() -> Value {
+    json!({"cmd":"DISPATCH","evt":"READY","nonce":null,"data":{
+        "v":1,
+        "config":{"cdn_host":"cdn.discordapp.com","api_endpoint":"//discord.com/api","environment":"production"},
+        "user":{"id":"1045800378228281345","username":"rustcord","discriminator":"0",
+                "global_name":"Rustcord","avatar":null,"bot":false,"flags":0,"premium_type":0}}})
+}
+
+/// Handle one command frame from a game or web page and return the reply. Only
+/// `SET_ACTIVITY` does anything; every other command is acknowledged with `data: null`.
+fn handle_command(
+    hub: &Hub,
+    sid: &str,
+    client_id: &str,
+    msg: &Value,
+    pid: &mut u64,
+    active: &mut bool,
+) -> Value {
+    let cmd = msg.get("cmd").and_then(Value::as_str).unwrap_or("");
+    let nonce = msg.get("nonce").cloned().unwrap_or(Value::Null);
+    if cmd != "SET_ACTIVITY" {
+        return json!({"cmd":cmd,"data":null,"evt":null,"nonce":nonce});
+    }
+    let args = msg.get("args").cloned().unwrap_or(Value::Null);
+    *pid = args.get("pid").and_then(Value::as_u64).unwrap_or(*pid);
+    let act = args.get("activity").cloned().unwrap_or(Value::Null);
+    if act.is_object() {
+        let norm = normalize_activity(act, client_id);
+        hub.publish(sid, bridge_message(norm.clone(), *pid, sid), false);
+        *active = true;
+        json!({"cmd":cmd,"data":norm,"evt":null,"nonce":nonce})
+    } else {
+        hub.publish(sid, bridge_message(Value::Null, *pid, sid), true);
+        *active = false;
+        json!({"cmd":cmd,"data":null,"evt":null,"nonce":nonce})
+    }
+}
+
 #[allow(clippy::while_let_loop)]
 fn handle_ipc(mut s: UnixStream, hub: &Hub, sid: String) {
     let mut client_id = String::new();
@@ -152,35 +196,13 @@ fn handle_ipc(mut s: UnixStream, hub: &Hub, sid: String) {
                     ));
                     break;
                 }
-                let ready = json!({"cmd":"DISPATCH","evt":"READY","nonce":null,"data":{
-                    "v":1,
-                    "config":{"cdn_host":"cdn.discordapp.com","api_endpoint":"//discord.com/api","environment":"production"},
-                    "user":{"id":"1045800378228281345","username":"rustcord","discriminator":"0",
-                            "global_name":"Rustcord","avatar":null,"bot":false,"flags":0,"premium_type":0}}});
+                let ready = ready_event();
                 if s.write_all(&frame(OP_FRAME, &ready)).is_err() {
                     break;
                 }
             }
             OP_FRAME if !client_id.is_empty() => {
-                let cmd = msg.get("cmd").and_then(Value::as_str).unwrap_or("");
-                let nonce = msg.get("nonce").cloned().unwrap_or(Value::Null);
-                let reply = if cmd == "SET_ACTIVITY" {
-                    let args = msg.get("args").cloned().unwrap_or(Value::Null);
-                    pid = args.get("pid").and_then(Value::as_u64).unwrap_or(pid);
-                    let act = args.get("activity").cloned().unwrap_or(Value::Null);
-                    if act.is_object() {
-                        let norm = normalize_activity(act, &client_id);
-                        hub.publish(&sid, bridge_message(norm.clone(), pid, &sid), false);
-                        active = true;
-                        json!({"cmd":cmd,"data":norm,"evt":null,"nonce":nonce})
-                    } else {
-                        hub.publish(&sid, bridge_message(Value::Null, pid, &sid), true);
-                        active = false;
-                        json!({"cmd":cmd,"data":null,"evt":null,"nonce":nonce})
-                    }
-                } else {
-                    json!({"cmd":cmd,"data":null,"evt":null,"nonce":nonce})
-                };
+                let reply = handle_command(hub, &sid, &client_id, &msg, &mut pid, &mut active);
                 if s.write_all(&frame(OP_FRAME, &reply)).is_err() {
                     break;
                 }
@@ -293,6 +315,157 @@ pub fn serve_bridge(port: u16, hub: Arc<Hub>) -> io::Result<u16> {
     Ok(bound)
 }
 
+/// Close codes of Discord's RPC protocol.
+const CLOSE_INVALID_CLIENT: u16 = 4000;
+const CLOSE_INVALID_ORIGIN: u16 = 4001;
+const CLOSE_INVALID_VERSION: u16 = 4004;
+const CLOSE_INVALID_ENCODING: u16 = 4005;
+
+fn query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+    query
+        .split('&')
+        .filter_map(|kv| kv.split_once('='))
+        .find(|(k, _)| *k == key)
+        .map(|(_, v)| v)
+}
+
+fn browser_origin_allowed(origin: Option<&str>, extra: &[String]) -> bool {
+    match origin {
+        None => true, // non-browser clients send no Origin
+        Some(o) => crate::nav::is_discord_url(o) || extra.iter().any(|e| e == o),
+    }
+}
+
+/// Why a browser RPC connection must be closed, if it must.
+fn browser_reject(
+    query: &str,
+    origin: Option<&str>,
+    extra: &[String],
+) -> Option<(u16, &'static str)> {
+    if !browser_origin_allowed(origin, extra) {
+        return Some((CLOSE_INVALID_ORIGIN, "Invalid Origin"));
+    }
+    if query_param(query, "v") != Some("1") {
+        return Some((CLOSE_INVALID_VERSION, "Invalid Version"));
+    }
+    if query_param(query, "encoding").is_some_and(|e| e != "json") {
+        return Some((CLOSE_INVALID_ENCODING, "Invalid Encoding"));
+    }
+    match query_param(query, "client_id") {
+        Some(id) if (1..=32).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit()) => None,
+        _ => Some((CLOSE_INVALID_CLIENT, "Invalid Client ID")),
+    }
+}
+
+fn handle_browser(stream: TcpStream, hub: &Hub, extra: &[String], sid: String) {
+    use tungstenite::handshake::server::{ErrorResponse, Request, Response};
+    use tungstenite::protocol::frame::coding::CloseCode;
+    use tungstenite::protocol::{CloseFrame, WebSocketConfig};
+
+    let mut query = String::new();
+    let mut origin: Option<String> = None;
+    #[allow(clippy::result_large_err)]
+    let callback = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
+        query = req.uri().query().unwrap_or("").to_string();
+        origin = req
+            .headers()
+            .get("origin")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        Ok(resp)
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let config = WebSocketConfig::default()
+        .max_message_size(Some(MAX_FRAME))
+        .max_frame_size(Some(MAX_FRAME));
+    let Ok(mut ws) = tungstenite::accept_hdr_with_config(stream, callback, Some(config)) else {
+        return;
+    };
+    // Past the handshake an idle page is fine; a dead connection ends with a read error.
+    let _ = ws.get_mut().set_read_timeout(None);
+
+    // Close codes can only be seen by the page after the upgrade, so reject here.
+    if let Some((code, reason)) = browser_reject(&query, origin.as_deref(), extra) {
+        let _ = ws.close(Some(CloseFrame {
+            code: CloseCode::from(code),
+            reason: reason.into(),
+        }));
+        let _ = ws.flush();
+        return;
+    }
+    let client_id = query_param(&query, "client_id").unwrap_or("").to_string();
+    if ws
+        .send(tungstenite::Message::text(ready_event().to_string()))
+        .is_err()
+    {
+        return;
+    }
+    let (mut pid, mut active) = (0u64, false);
+    while let Ok(m) = ws.read() {
+        match m {
+            tungstenite::Message::Text(text) => {
+                let Ok(v) = serde_json::from_str::<Value>(text.as_str()) else {
+                    continue;
+                };
+                let reply = handle_command(hub, &sid, &client_id, &v, &mut pid, &mut active);
+                if ws
+                    .send(tungstenite::Message::text(reply.to_string()))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            tungstenite::Message::Close(_) => break,
+            _ => {}
+        }
+    }
+    if active {
+        hub.publish(&sid, bridge_message(Value::Null, pid, &sid), true);
+    }
+}
+
+/// Serve Discord's browser RPC transport (`ws://127.0.0.1:<port>/?v=1&client_id=..`) on the
+/// first free port of `ports`. Loopback only. Connections without an Origin (native tools)
+/// are accepted; browser pages only from Discord's own origins or the exact origins in
+/// `extra_origins`, so a random website cannot set your presence.
+pub fn serve_browser(
+    ports: std::ops::RangeInclusive<u16>,
+    hub: Arc<Hub>,
+    extra_origins: Vec<String>,
+) -> io::Result<u16> {
+    static CONN: AtomicU64 = AtomicU64::new(0);
+    static OPEN: AtomicUsize = AtomicUsize::new(0);
+    let mut last = io::Error::new(io::ErrorKind::AddrInUse, "no free RPC port");
+    for port in ports {
+        let listener = match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(l) => l,
+            Err(e) => {
+                last = e;
+                continue;
+            }
+        };
+        let bound = listener.local_addr()?.port();
+        let extra = Arc::new(extra_origins);
+        thread::spawn(move || {
+            for conn in listener.incoming().flatten() {
+                if OPEN.fetch_add(1, Ordering::SeqCst) >= MAX_BROWSER_CONNECTIONS {
+                    OPEN.fetch_sub(1, Ordering::SeqCst);
+                    continue; // dropped: too many open connections
+                }
+                let hub = hub.clone();
+                let extra = extra.clone();
+                let sid = format!("web-{}", CONN.fetch_add(1, Ordering::Relaxed));
+                thread::spawn(move || {
+                    handle_browser(conn, &hub, &extra, sid);
+                    OPEN.fetch_sub(1, Ordering::SeqCst);
+                });
+            }
+        });
+        return Ok(bound);
+    }
+    Err(last)
+}
+
 /// Where the detectable-games list lives.
 pub fn detectable_path(data_dir: &Path) -> PathBuf {
     data_dir.join("rpc").join("detectable.json")
@@ -311,6 +484,14 @@ pub fn start(settings: &crate::settings::Settings, data_dir: &Path) {
     }
     if let Err(e) = serve_bridge(BRIDGE_PORT, hub.clone()) {
         eprintln!("rustcord: rich presence bridge port {BRIDGE_PORT} unavailable: {e}");
+    }
+    match serve_browser(
+        BROWSER_PORTS,
+        hub.clone(),
+        settings.rpc_browser_origins.clone(),
+    ) {
+        Ok(p) => eprintln!("rustcord: browser RPC on 127.0.0.1:{p}"),
+        Err(e) => eprintln!("rustcord: browser RPC unavailable: {e}"),
     }
     if settings.rpc_detect_games {
         match crate::games::Db::load(&detectable_path(data_dir)) {
@@ -457,5 +638,138 @@ mod tests {
         c.write_all(&frame(OP_HANDSHAKE, &json!({"v":2}))).unwrap();
         let (op, _) = read_frame(&mut c).unwrap();
         assert_eq!(op, OP_CLOSE);
+    }
+
+    fn ws_open(
+        port: u16,
+        query: &str,
+        origin: Option<&str>,
+    ) -> Result<tungstenite::WebSocket<TcpStream>, tungstenite::Error> {
+        let tcp = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut req = tungstenite::client::IntoClientRequest::into_client_request(format!(
+            "ws://127.0.0.1:{port}/?{query}"
+        ))
+        .unwrap();
+        if let Some(o) = origin {
+            req.headers_mut().insert("origin", o.parse().unwrap());
+        }
+        tungstenite::client(req, tcp)
+            .map(|(ws, _)| ws)
+            .map_err(|e| match e {
+                tungstenite::HandshakeError::Failure(e) => e,
+                tungstenite::HandshakeError::Interrupted(_) => panic!("interrupted"),
+            })
+    }
+
+    fn close_code(ws: &mut tungstenite::WebSocket<TcpStream>) -> u16 {
+        match ws.read().unwrap() {
+            tungstenite::Message::Close(Some(f)) => u16::from(f.code),
+            other => panic!("expected close, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn browser_rejections() {
+        let none: Vec<String> = vec![];
+        let q = "v=1&client_id=123&encoding=json";
+        assert_eq!(browser_reject(q, None, &none), None);
+        assert_eq!(browser_reject(q, Some("https://discord.com"), &none), None);
+        assert_eq!(browser_reject("v=1&client_id=123", None, &none), None);
+        assert_eq!(
+            browser_reject(q, Some("https://evil.example"), &none)
+                .unwrap()
+                .0,
+            4001
+        );
+        assert_eq!(browser_reject(q, Some("null"), &none).unwrap().0, 4001);
+        assert_eq!(
+            browser_reject("v=2&client_id=123", None, &none).unwrap().0,
+            4004
+        );
+        assert_eq!(
+            browser_reject("client_id=123", None, &none).unwrap().0,
+            4004
+        );
+        assert_eq!(
+            browser_reject("v=1&client_id=1&encoding=etf", None, &none)
+                .unwrap()
+                .0,
+            4005
+        );
+        assert_eq!(browser_reject("v=1", None, &none).unwrap().0, 4000);
+        assert_eq!(
+            browser_reject("v=1&client_id=abc", None, &none).unwrap().0,
+            4000
+        );
+        assert_eq!(
+            browser_reject("v=1&client_id=", None, &none).unwrap().0,
+            4000
+        );
+        let extra = vec!["https://game.example".to_string()];
+        assert_eq!(
+            browser_reject(q, Some("https://game.example"), &extra),
+            None
+        );
+        assert!(browser_reject(q, Some("https://game.example.evil"), &extra).is_some());
+    }
+
+    #[test]
+    fn browser_transport_end_to_end() {
+        let hub = Arc::new(Hub::default());
+        let bridge = serve_bridge(0, hub.clone()).unwrap();
+        let port = serve_browser(0..=0, hub, vec!["https://game.example".into()]).unwrap();
+        assert!(port != 0);
+
+        let tcp = TcpStream::connect(("127.0.0.1", bridge)).unwrap();
+        tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let (mut bws, _) = tungstenite::client(format!("ws://127.0.0.1:{bridge}"), tcp).unwrap();
+
+        // A web page on an allowed origin sets an activity.
+        let mut ws = ws_open(
+            port,
+            "v=1&client_id=555&encoding=json",
+            Some("https://game.example"),
+        )
+        .unwrap();
+        let ready: Value =
+            serde_json::from_str(ws.read().unwrap().into_text().unwrap().as_str()).unwrap();
+        assert_eq!(ready["evt"], "READY");
+        ws.send(tungstenite::Message::text(
+            json!({"cmd":"SET_ACTIVITY","nonce":"a","args":{"pid":9,"activity":{"details":"Level 3"}}}).to_string(),
+        ))
+        .unwrap();
+        let reply: Value =
+            serde_json::from_str(ws.read().unwrap().into_text().unwrap().as_str()).unwrap();
+        assert_eq!(reply["nonce"], "a");
+        assert_eq!(reply["data"]["application_id"], "555");
+        let v: Value =
+            serde_json::from_str(bws.read().unwrap().into_text().unwrap().as_str()).unwrap();
+        assert_eq!(v["activity"]["details"], "Level 3");
+        assert_eq!(v["pid"], 9);
+
+        // Unknown commands are acknowledged, garbage is ignored.
+        ws.send(tungstenite::Message::text("not json")).unwrap();
+        ws.send(tungstenite::Message::text(
+            json!({"cmd":"PING","nonce":"z"}).to_string(),
+        ))
+        .unwrap();
+        let reply: Value =
+            serde_json::from_str(ws.read().unwrap().into_text().unwrap().as_str()).unwrap();
+        assert_eq!(reply["nonce"], "z");
+
+        // Closing the page clears the activity.
+        drop(ws);
+        let v: Value =
+            serde_json::from_str(bws.read().unwrap().into_text().unwrap().as_str()).unwrap();
+        assert!(v["activity"].is_null());
+
+        // Bad origin, version and client id are closed with Discord's codes and set nothing.
+        let mut bad = ws_open(port, "v=1&client_id=555", Some("https://evil.example")).unwrap();
+        assert_eq!(close_code(&mut bad), 4001);
+        let mut bad = ws_open(port, "v=9&client_id=555", None).unwrap();
+        assert_eq!(close_code(&mut bad), 4004);
+        let mut bad = ws_open(port, "v=1&client_id=x", Some("https://discord.com")).unwrap();
+        assert_eq!(close_code(&mut bad), 4000);
     }
 }

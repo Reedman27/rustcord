@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! XDG paths, no extra dependencies.
 
 use std::ffi::OsString;

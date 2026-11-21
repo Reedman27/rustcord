@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! URL policy. Only Discord's own hosts may load inside the app window;
 //! everything else is handed to the system browser. Parsing uses the `url`
 //! crate (WHATWG rules) so userinfo, port, backslash and lookalike-host tricks

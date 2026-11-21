@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import socket,struct,json,sys,time,os
 p=os.path.join(os.environ['XDG_RUNTIME_DIR'],'discord-ipc-0')
 s=socket.socket(socket.AF_UNIX); s.connect(p)

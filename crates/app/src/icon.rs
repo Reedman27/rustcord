@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Window icon, generated at startup. Window managers read it for the title bar,
 //! task list and icon (Window Maker uses it for the app icon).
 

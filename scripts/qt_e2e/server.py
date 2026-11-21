@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import http.server, ssl, json, sys, threading
 reports=[]
 class H(http.server.BaseHTTPRequestHandler):

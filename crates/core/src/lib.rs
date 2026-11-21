@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Rustcord core: everything that can be tested without a browser engine.
 
 pub mod edit;

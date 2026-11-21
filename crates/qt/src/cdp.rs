@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //! Content-Security-Policy bypass for the Discord page through Chromium's DevTools protocol.
 //!
 //! Discord's CSP blocks stylesheets and images from other hosts, which breaks online
