@@ -4,3 +4,4 @@ build-flatpak/
 dist/
 target/
 __pycache__/
+__pycache__/
