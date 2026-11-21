@@ -57,7 +57,8 @@ pub struct Settings {
     /// browser RPC websocket (127.0.0.1:6463). Discord's own origins are always allowed;
     /// native tools send no origin and are always allowed.
     pub rpc_browser_origins: Vec<String>,
-    /// Qt frontend only: while a mod client is enabled, bypass Discord's CSP through a
+    /// Qt frontend only: while a mod client is enabled, or an enabled theme / quick.css loads
+    /// remote assets (`@import url(https://...)`), bypass Discord's CSP through a
     /// loopback DevTools port so online themes load. Turn off to avoid opening that port.
     pub mod_csp_bypass: bool,
     /// Which servers may notify, and unread badges (Qt frontend).

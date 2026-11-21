@@ -58,6 +58,47 @@ fn read_css(path: &Path) -> Option<String> {
     fs::read_to_string(path).ok()
 }
 
+/// True if CSS text loads something from another host (`@import` or `url()` with an
+/// http(s) or protocol-relative address). Discord's CSP blocks those unless bypassed.
+/// Works on bytes so non-ASCII CSS can never cause a slicing panic.
+pub fn css_uses_remote(css: &str) -> bool {
+    let b = css.to_ascii_lowercase().into_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        let skip = if b[i..].starts_with(b"@import") {
+            7
+        } else if b[i..].starts_with(b"url(") {
+            4
+        } else {
+            i += 1;
+            continue;
+        };
+        let mut j = i + skip;
+        while j < b.len() && matches!(b[j], b' ' | b'\t' | b'\r' | b'\n' | b'"' | b'\'') {
+            j += 1;
+        }
+        let tail = &b[j..];
+        if tail.starts_with(b"http://") || tail.starts_with(b"https://") || tail.starts_with(b"//")
+        {
+            return true;
+        }
+        // Continue right after the keyword so `@import url(...)` is seen as `url(` too.
+        i += skip;
+    }
+    false
+}
+
+/// Whether the enabled themes or quick.css need the CSP bypass to load remote assets.
+pub fn needs_csp_bypass(config_dir: &Path, enabled: &[String]) -> bool {
+    let themes_dir = config_dir.join("themes");
+    enabled
+        .iter()
+        .filter(|n| valid_theme_name(n))
+        .filter_map(|n| read_css(&themes_dir.join(format!("{n}.css"))))
+        .chain(read_css(&config_dir.join("quick.css")))
+        .any(|css| css_uses_remote(&css))
+}
+
 /// Concatenate the accent variable, enabled themes (in the order given) and quick CSS.
 /// Unknown or invalid theme names are skipped.
 pub fn build_css(
@@ -89,6 +130,8 @@ pub fn build_css(
 
 /// JavaScript that creates or replaces the theme `<style>` element. The CSS is embedded
 /// as a JSON string literal, so quotes, newlines and `</style>` cannot break out.
+/// Discord is a single-page app that can rewrite `<head>`, so a small observer puts the
+/// element back if it disappears.
 pub fn injection_script(css: &str) -> String {
     // serde_json escapes control characters and quotes; `<` is additionally escaped so the
     // literal can never contain a closing tag if this script is ever inlined in HTML.
@@ -98,10 +141,17 @@ pub fn injection_script(css: &str) -> String {
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
     format!(
-        "(function(){{var id={id};var el=document.getElementById(id);\
+        "(function(){{var id={id};var css={literal};\
+function put(){{var el=document.getElementById(id);\
 if(!el){{el=document.createElement('style');el.id=id;\
 (document.head||document.documentElement).appendChild(el);}}\
-el.textContent={literal};}})();",
+if(el.textContent!==css)el.textContent=css;}}\
+put();\
+if(window.__rustcordThemeObs)window.__rustcordThemeObs.disconnect();\
+try{{var t=0;window.__rustcordThemeObs=new MutationObserver(function(){{\
+if(!document.getElementById(id)&&!t){{t=setTimeout(function(){{t=0;put();}},50);}}}});\
+window.__rustcordThemeObs.observe(document.documentElement,{{childList:true,subtree:true}});}}catch(e){{}}\
+}})();",
         id = serde_json::to_string(STYLE_ELEMENT_ID).unwrap_or_default(),
     )
 }
@@ -207,5 +257,38 @@ mod tests {
         // the payload only appears inside the escaped literal
         assert!(js.contains("\\\"; alert(1); //\\u003c/style>"));
         assert!(js.starts_with("(function(){var id=\"rustcord-theme\""));
+    }
+
+    #[test]
+    fn detects_remote_css() {
+        for yes in [
+            "@import url(https://x.test/a.css);",
+            "@import \"https://x.test/a.css\";",
+            "a{background:url( 'http://x.test/i.png')}",
+            "@import url(//x.test/a.css);",
+            "@IMPORT URL(HTTPS://X.TEST/A.CSS);",
+        ] {
+            assert!(css_uses_remote(yes), "{yes}");
+        }
+        for no in [
+            "a{color:red}",
+            "a{background:url(data:image/png;base64,AAA)}",
+            "@import url(local.css);",
+            "a{content:\"é\"}",
+        ] {
+            assert!(!css_uses_remote(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn bypass_needed_only_for_remote_themes() {
+        let d = tmpdir("remote");
+        fs::write(d.join("themes/local.css"), "a{color:red}").unwrap();
+        fs::write(d.join("themes/online.css"), "@import url(https://x.test/t.css);").unwrap();
+        assert!(!needs_csp_bypass(&d, &["local".into()]));
+        assert!(needs_csp_bypass(&d, &["local".into(), "online".into()]));
+        assert!(!needs_csp_bypass(&d, &[]));
+        fs::write(d.join("quick.css"), "a{background:url(https://x.test/i.png)}").unwrap();
+        assert!(needs_csp_bypass(&d, &[]));
     }
 }

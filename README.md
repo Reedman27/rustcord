@@ -114,7 +114,12 @@ or set `"sandbox": false` in `~/.config/rustcord/settings.json`.
 
 Put theme CSS in `~/.config/rustcord/themes/<name>.css` and list the name in `themes`.
 `~/.config/rustcord/quick.css` is always applied last. The accent colour is exposed to CSS as
-`var(--rustcord-accent)`. Changes apply on the next page load or restart. A malformed settings
+`var(--rustcord-accent)`. Changes apply on the next page load or restart.
+
+Themes that pull from other hosts (`@import url(https://...)`, remote `url()` images or fonts) are
+detected automatically and Discord's CSP is bypassed for them, with or without a mod client
+(Qt: through the loopback DevTools port, which `mod_csp_bypass: false` turns off; CEF: in-process).
+The theme `<style>` element is re-created if Discord removes it. A malformed settings
 file is kept as `settings.json.bad` and defaults are used.
 
 ## Chimera Linux and other musl systems (native Qt WebEngine build)

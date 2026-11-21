@@ -210,7 +210,9 @@ fn main() -> ExitCode {
     };
 
     let mut switches = settings.chromium_switches();
-    if !mod_script.is_empty() && settings.mod_csp_bypass {
+    // Online themes (`@import url(https://...)`) need the same CSP bypass as mod clients.
+    let remote_theme = theme::needs_csp_bypass(&config_dir, &settings.themes);
+    if (!mod_script.is_empty() || remote_theme) && settings.mod_csp_bypass {
         match cdp::free_port() {
             Some(port) => {
                 switches.push(("remote-debugging-port".into(), Some(port.to_string())));

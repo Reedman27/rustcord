@@ -6,7 +6,7 @@
 //! way to edit response headers, so this attaches to the page over the loopback debugging
 //! port and calls `Page.setBypassCSP`, then reloads the page once so it applies.
 //!
-//! Only used while a mod client is enabled. The debugging port listens on 127.0.0.1 only,
+//! Only used while a mod client is enabled or an enabled theme / quick.css loads remote assets. The debugging port listens on 127.0.0.1 only,
 //! but any local process of any user can connect to it, which is why it is limited to that case
 //! and can be turned off with `mod_csp_bypass = false`.
 
