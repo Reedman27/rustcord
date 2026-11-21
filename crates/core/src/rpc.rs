@@ -293,6 +293,42 @@ pub fn serve_bridge(port: u16, hub: Arc<Hub>) -> io::Result<u16> {
     Ok(bound)
 }
 
+/// Where the detectable-games list lives.
+pub fn detectable_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("rpc").join("detectable.json")
+}
+
+/// Start the IPC socket, the bridge and (if enabled) game detection. Failures only disable
+/// presence, never the app.
+pub fn start(settings: &crate::settings::Settings, data_dir: &Path) {
+    let hub = Arc::new(Hub::default());
+    match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(dir) => match serve_ipc(Path::new(&dir), hub.clone()) {
+            Ok(p) => eprintln!("rustcord: rich presence socket {}", p.display()),
+            Err(e) => eprintln!("rustcord: rich presence socket unavailable: {e}"),
+        },
+        None => eprintln!("rustcord: XDG_RUNTIME_DIR not set, rich presence socket disabled"),
+    }
+    if let Err(e) = serve_bridge(BRIDGE_PORT, hub.clone()) {
+        eprintln!("rustcord: rich presence bridge port {BRIDGE_PORT} unavailable: {e}");
+    }
+    if settings.rpc_detect_games {
+        match crate::games::Db::load(&detectable_path(data_dir)) {
+            Some(db) if !db.is_empty() => {
+                crate::games::spawn_detector(
+                    hub,
+                    db,
+                    PathBuf::from("/proc"),
+                    Duration::from_secs(5),
+                );
+            }
+            _ => eprintln!(
+                "rustcord: game detection on but no list; run `rustcord rpc update-games`"
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

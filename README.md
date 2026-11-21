@@ -16,7 +16,7 @@ This is an early build. Read "Not done" before relying on it.
 
 ### Verified here
 - `rustcord-core` (URL policy, settings, XDG paths, single instance, theme engine, icon
-  generation): 48 unit tests pass (including Rich Presence over a real socket and websocket).
+  generation): 51 unit tests pass (including Rich Presence over a real socket and websocket).
 - The generated window icon PNG decodes correctly in Pillow, and the theme injection script
   applies, is idempotent and cannot inject markup in a real Chromium page
   (`python3 scripts/verify_assets.py`).
@@ -114,8 +114,8 @@ build: settings, themes, Vencord/Equicord, Rich Presence, single instance, deep 
 
 ```
 apk add qt6-qtwebengine-devel rust cargo clang pkgconf     # package names: check `apk search`
-cargo build --release                                      # builds rustcord-qt, no CEF download
-target/release/rustcord-qt
+./scripts/install-qt.sh                                    # builds and installs to ~/.local
+rustcord-qt
 target/release/rustcord-qt mods install equicord && target/release/rustcord-qt mods enable equicord
 ```
 
@@ -175,8 +175,10 @@ games and tools that set a presence work without arRPC or Node. It feeds the
 **WebRichPresence (arRPC)** plugin that Vencord and Equicord include, which connects to
 `ws://127.0.0.1:1337` (loopback only, Discord origins only). Enable that plugin in Discord's
 Vencord/Equicord settings. Tested with a simulated game and bridge client (6 tests); not tested with a
-real game. Not implemented: the browser RPC websocket (port 6463), automatic game detection
-(arRPC's process scanner), Flatpak socket sharing. Set `"rpc": false` to turn it off.
+real game. Game detection is opt-in: `rustcord-qt rpc update-games` downloads Discord's list of known games,
+then `config set rpc_detect_games on` shows running ones as playing (process matching, including
+Wine paths, unit-tested against a fake /proc; the real list was not downloadable here). Not
+implemented: the browser RPC websocket (port 6463), Flatpak socket sharing. Set `"rpc": false` to turn it off.
 
 ## Not done (honest list)
 
@@ -190,7 +192,8 @@ real game. Not implemented: the browser RPC websocket (port 6463), automatic gam
 - **Vencord/Equicord**: plugins that need Vesktop's native layer (`VencordNative`) are
   unavailable; cross-origin requests use a `fetch` shim, so hosts without CORS headers fail.
   Equicloud sync is not implemented.
-- **Rich Presence**: no automatic game detection and no browser RPC websocket (port 6463).
+- **Rich Presence**: no browser RPC websocket (port 6463). Game detection exists but was only tested
+  against a fake process table and a hand-written list.
 - **Global shortcuts and badge count**: not implemented (no portable way on plain X11 without
   grabbing keys; I did not want to guess).
 - **Frameless window mode**, multiple main windows, **audio device enumeration**: not implemented.

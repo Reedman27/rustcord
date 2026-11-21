@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use rustcord_core::settings::{self as rs, Settings, WindowState};
 use rustcord_core::single_instance::{self, Message, Outcome};
-use rustcord_core::{icon, mods, nav, paths, rpc, theme};
+use rustcord_core::{icon, mods, nav, paths, theme};
 
 mod cdp;
 #[path = "../../app/src/mods_cli.rs"]
@@ -126,7 +126,7 @@ fn main() -> ExitCode {
     };
 
     if settings.rpc {
-        start_rpc();
+        rustcord_core::rpc::start(&settings, &paths::data_dir());
     }
     notify::init(settings.notifications.clone());
 
@@ -214,22 +214,4 @@ fn main() -> ExitCode {
     // SAFETY: cfg and all strings it points to live until rc_qt_run returns.
     let code = unsafe { rc_qt_run(args.len() as c_int, ptrs.as_mut_ptr(), &cfg) };
     ExitCode::from(code.clamp(0, 255) as u8)
-}
-
-/// Local Rich Presence server. Failures only disable presence, never the app.
-fn start_rpc() {
-    let hub = std::sync::Arc::new(rpc::Hub::default());
-    match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(dir) => match rpc::serve_ipc(std::path::Path::new(&dir), hub.clone()) {
-            Ok(p) => eprintln!("rustcord: rich presence socket {}", p.display()),
-            Err(e) => eprintln!("rustcord: rich presence socket unavailable: {e}"),
-        },
-        None => eprintln!("rustcord: XDG_RUNTIME_DIR not set, rich presence socket disabled"),
-    }
-    if let Err(e) = rpc::serve_bridge(rpc::BRIDGE_PORT, hub) {
-        eprintln!(
-            "rustcord: rich presence bridge port {} unavailable: {e}",
-            rpc::BRIDGE_PORT
-        );
-    }
 }

@@ -124,6 +124,8 @@ const CONFIG_USAGE: &str = "usage:
   rustcord themes list                 themes found in <config>/themes (* = enabled)
   rustcord themes enable|disable <name>
   rustcord autostart enable|disable    XDG autostart entry for this executable
+  rustcord rpc update-games            download Discord's list of known games (for detection)
+  rustcord config set rpc_detect_games on   then show running games as playing
   rustcord notify show                 selective notifications (Qt build): which servers may notify
   rustcord notify mode off|allow|block
   rustcord notify add|remove <server name>
@@ -137,7 +139,7 @@ pub fn dispatch(argv: &[String]) -> Option<ExitCode> {
     let rest = &argv[1.min(argv.len())..];
     match argv.first().map(String::as_str)? {
         "mods" => Some(run(rest)),
-        "config" | "themes" | "autostart" | "notify" => {
+        "config" | "themes" | "autostart" | "notify" | "rpc" => {
             let result = settings_command(argv[0].as_str(), rest);
             Some(match result {
                 Ok(()) => ExitCode::SUCCESS,
@@ -203,6 +205,22 @@ fn settings_command(cmd: &str, args: &[String]) -> Result<(), String> {
             let xdg = home.parent().ok_or("no config directory")?;
             edit::set_autostart(xdg, &exe.to_string_lossy(), op == "enable")?;
             println!("autostart {op}d");
+            Ok(())
+        }
+        ("rpc", Some("update-games")) => {
+            let url = "https://discord.com/api/v10/applications/detectable";
+            println!("downloading {url}");
+            let bytes = download(url)?;
+            let db = rustcord_core::games::Db::parse(&bytes)?;
+            let path = rustcord_core::rpc::detectable_path(&paths::data_dir());
+            std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+            let tmp = path.with_extension("tmp");
+            std::fs::write(&tmp, &bytes).map_err(|e| e.to_string())?;
+            std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+            println!(
+                "saved {} known executables; enable with `config set rpc_detect_games on`",
+                db.len()
+            );
             Ok(())
         }
         ("notify", Some("show")) => {

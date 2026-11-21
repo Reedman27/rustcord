@@ -212,9 +212,12 @@ extern "C" {
 int rc_qt_run(int argc, char **argv, const RcConfig *c) {
     qputenv("QTWEBENGINE_CHROMIUM_FLAGS", c->chromium_flags);
     if (!c->sandbox) qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
+    // X11 WM_CLASS = ("rustcord", "Rustcord"), the same as the CEF build, so window manager
+    // rules (Window Maker attributes) and StartupWMClass=rustcord work for both.
+    qputenv("RESOURCE_NAME", "rustcord");
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QApplication app(argc, argv);
-    QApplication::setApplicationName("rustcord");
+    QApplication::setApplicationName("Rustcord");
     QApplication::setOrganizationName("rustcord");
     QApplication::setDesktopFileName("rustcord");
     QApplication::setQuitOnLastWindowClosed(false);

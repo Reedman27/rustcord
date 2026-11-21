@@ -15,6 +15,7 @@ pub const KEYS: &[&str] = &[
     "tray",
     "close_to_tray",
     "rpc",
+    "rpc_detect_games",
     "mod_csp_bypass",
     "accent_color",
     "color_scheme",
@@ -41,6 +42,7 @@ pub fn set_key(s: &mut Settings, key: &str, value: &str) -> Result<(), String> {
         "tray" => s.tray = parse_bool(value)?,
         "close_to_tray" => s.close_to_tray = parse_bool(value)?,
         "rpc" => s.rpc = parse_bool(value)?,
+        "rpc_detect_games" => s.rpc_detect_games = parse_bool(value)?,
         "mod_csp_bypass" => s.mod_csp_bypass = parse_bool(value)?,
         "accent_color" => {
             s.accent_color = if value == "none" {

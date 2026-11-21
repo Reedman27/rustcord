@@ -1,6 +1,7 @@
 //! Rustcord core: everything that can be tested without a browser engine.
 
 pub mod edit;
+pub mod games;
 pub mod icon;
 pub mod mods;
 pub mod nav;
